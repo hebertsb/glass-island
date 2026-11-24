@@ -831,7 +831,8 @@ app.whenReady().then(() => {
     return ollamaRes;
   });
 
-  // Abre una app (ej. Claude/Copilot) esperando a que la ventana tome foco y envía Ctrl+V + Enter
+  // Abre una app (ej. Claude/Copilot), suelta foco de GlassIsland, enfoca la ventana real,
+  // hace clic en el área de texto y envía Ctrl+V + Enter a nivel Win32
   ipcMain.handle("island:launch-and-paste", async (_e, target, promptText, appLabel) => {
     const t = String(target || "").trim();
     const txt = String(promptText || "").trim();
@@ -839,6 +840,14 @@ app.whenReady().then(() => {
     if (!t) return { ok: false };
     try {
       if (txt) clipboard.writeText(txt);
+      // Suelta el foco de GlassIsland para que Windows permita enfocar Copilot/Claude
+      if (win && !win.isDestroyed()) {
+        try {
+          win.blur();
+        } catch {
+          // ignore
+        }
+      }
       if (t.startsWith("shell:AppsFolder\\")) {
         spawn("explorer.exe", [t], { detached: true, stdio: "ignore" }).unref();
       } else if (/^(https?|mailto|steam|spotify):/i.test(t)) {
@@ -846,25 +855,46 @@ app.whenReady().then(() => {
       } else {
         await shell.openPath(t);
       }
-      // Espera a que la ventana real de Copilot/Claude aparezca y reciba foco,
-      // luego envía Ctrl+V + Enter a nivel Win32 (keybd_event) para que UWP/WebView2 nunca ignore Ctrl
       if (txt) {
         const safeLabel = label || "Copilot";
         const psPaste =
-          `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class GIPaste { [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo); public static void Send() { keybd_event(0x11,0,0,UIntPtr.Zero); System.Threading.Thread.Sleep(40); keybd_event(0x56,0,0,UIntPtr.Zero); System.Threading.Thread.Sleep(40); keybd_event(0x56,0,2,UIntPtr.Zero); System.Threading.Thread.Sleep(40); keybd_event(0x11,0,2,UIntPtr.Zero); System.Threading.Thread.Sleep(350); keybd_event(0x0D,0,0,UIntPtr.Zero); System.Threading.Thread.Sleep(40); keybd_event(0x0D,0,2,UIntPtr.Zero); } }'; ` +
-          `$ws = New-Object -ComObject WScript.Shell; ` +
-          `$activated = $false; ` +
-          `for ($i = 0; $i -lt 14; $i++) { ` +
+          `Add-Type -TypeDefinition '` +
+          `using System; using System.Runtime.InteropServices; ` +
+          `public class GIPaste { ` +
+          `  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; } ` +
+          `  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd); ` +
+          `  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect); ` +
+          `  [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y); ` +
+          `  [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, int dx, int dy, uint dwData, UIntPtr dwExtraInfo); ` +
+          `  [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo); ` +
+          `  public static void FocusAndSend(IntPtr hWnd) { ` +
+          `    SetForegroundWindow(hWnd); System.Threading.Thread.Sleep(350); ` +
+          `    RECT r; if (GetWindowRect(hWnd, out r)) { ` +
+          `      int cx = r.Left + (int)((r.Right - r.Left) * 0.52); ` +
+          `      int cy = r.Top + (int)((r.Bottom - r.Top) * 0.52); ` +
+          `      SetCursorPos(cx, cy); System.Threading.Thread.Sleep(80); ` +
+          `      mouse_event(0x02, 0, 0, 0, UIntPtr.Zero); mouse_event(0x04, 0, 0, 0, UIntPtr.Zero); ` +
+          `      System.Threading.Thread.Sleep(220); ` +
+          `    } ` +
+          `    keybd_event(0x11,0,0,UIntPtr.Zero); System.Threading.Thread.Sleep(45); ` +
+          `    keybd_event(0x56,0,0,UIntPtr.Zero); System.Threading.Thread.Sleep(45); ` +
+          `    keybd_event(0x56,0,2,UIntPtr.Zero); System.Threading.Thread.Sleep(45); ` +
+          `    keybd_event(0x11,0,2,UIntPtr.Zero); System.Threading.Thread.Sleep(350); ` +
+          `    keybd_event(0x0D,0,0,UIntPtr.Zero); System.Threading.Thread.Sleep(45); ` +
+          `    keybd_event(0x0D,0,2,UIntPtr.Zero); ` +
+          `  } ` +
+          `}'; ` +
+          `$hwnd = [IntPtr]::Zero; ` +
+          `for ($i = 0; $i -lt 16; $i++) { ` +
           `  Start-Sleep -Milliseconds 350; ` +
-          `  if ($ws.AppActivate('${safeLabel}')) { $activated = $true; break } ` +
+          `  $p = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle -like '*${safeLabel}*' } | Select-Object -First 1; ` +
+          `  if ($p) { $hwnd = $p.MainWindowHandle; break } ` +
           `}; ` +
-          `Start-Sleep -Milliseconds 900; ` +
-          `if ($activated) { $ws.AppActivate('${safeLabel}') | Out-Null; Start-Sleep -Milliseconds 250 }; ` +
-          `[GIPaste]::Send()`;
+          `if ($hwnd -ne [IntPtr]::Zero) { Start-Sleep -Milliseconds 900; [GIPaste]::FocusAndSend($hwnd) }`;
         execFile(
           PS_EXE,
           ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", psPaste],
-          { windowsHide: true, timeout: 10000 },
+          { windowsHide: true, timeout: 12000 },
           () => {},
         );
       }
