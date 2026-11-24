@@ -2057,7 +2057,25 @@ export default function App() {
                       <button
                         type="button"
                         className="glass-btn glass-btn--white"
-                        onClick={() => handleLaunch(activeAppWidget.exePath)}
+                        onClick={() => {
+                          const pendingPrompt =
+                            quickPrompt.trim() ||
+                            (agentAnswer &&
+                            agentAnswer.agent.toLowerCase().includes(activeAppWidget.name.toLowerCase())
+                              ? agentAnswer.question
+                              : "");
+                          if (pendingPrompt && isAiAgentApp(activeAppWidget.name, activeAppWidget.processName)) {
+                            void getBridge()
+                              ?.launch_and_paste(
+                                activeAppWidget.exePath,
+                                pendingPrompt,
+                                activeAppWidget.name,
+                              )
+                              .catch(() => {});
+                          } else {
+                            void handleLaunch(activeAppWidget.exePath);
+                          }
+                        }}
                       >
                         <ExternalLink size={12} /> Abrir
                       </button>

@@ -685,7 +685,8 @@ app.whenReady().then(() => {
     if (!utterance) return { ok: false };
 
     const systemPrompt =
-      `Eres ${assistantName}, un asistente personal inteligente estilo Jarvis en la laptop de Hebert (programador en Santa Cruz, Bolivia). ` +
+      `Eres ${assistantName}, un asistente personal inteligente estilo Jarvis en la laptop de Hebert (ingeniero/programador de software en Santa Cruz, Bolivia). ` +
+      `Cuando Hebert pregunte por siglas o conceptos técnicos (como MCP, BaaS, API, Docker, REST, JWT, etc.), responde SIEMPRE en contexto de ingeniería de software y tecnología actual (por ejemplo: MCP = Model Context Protocol de Anthropic, BaaS = Backend as a Service). ` +
       `Responde SIEMPRE SOLO con un JSON válido (sin markdown ni texto fuera del JSON) con este formato:\n` +
       `{"actions":[{"tool":"<tool>","arg":"<valor>","platform":"youtube|youtube music|spotify","level":50}],"reply":"<respuesta corta, cálida y natural en español latino>","learn":true}\n` +
       `Tools disponibles:\n` +
@@ -868,13 +869,17 @@ app.whenReady().then(() => {
           `  [DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, int dx, int dy, uint dwData, UIntPtr dwExtraInfo); ` +
           `  [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo); ` +
           `  public static void FocusAndSend(IntPtr hWnd) { ` +
-          `    SetForegroundWindow(hWnd); System.Threading.Thread.Sleep(350); ` +
+          `    SetForegroundWindow(hWnd); System.Threading.Thread.Sleep(450); ` +
+          `    keybd_event(0x11,0,0,UIntPtr.Zero); System.Threading.Thread.Sleep(40); ` +
+          `    keybd_event(0x4E,0,0,UIntPtr.Zero); System.Threading.Thread.Sleep(40); ` +
+          `    keybd_event(0x4E,0,2,UIntPtr.Zero); System.Threading.Thread.Sleep(40); ` +
+          `    keybd_event(0x11,0,2,UIntPtr.Zero); System.Threading.Thread.Sleep(700); ` +
           `    RECT r; if (GetWindowRect(hWnd, out r)) { ` +
-          `      int cx = r.Left + (int)((r.Right - r.Left) * 0.52); ` +
-          `      int cy = r.Top + (int)((r.Bottom - r.Top) * 0.52); ` +
+          `      int cx = r.Left + (int)((r.Right - r.Left) * 0.56); ` +
+          `      int cy = r.Top + (int)((r.Bottom - r.Top) * 0.53); ` +
           `      SetCursorPos(cx, cy); System.Threading.Thread.Sleep(80); ` +
           `      mouse_event(0x02, 0, 0, 0, UIntPtr.Zero); mouse_event(0x04, 0, 0, 0, UIntPtr.Zero); ` +
-          `      System.Threading.Thread.Sleep(220); ` +
+          `      System.Threading.Thread.Sleep(240); ` +
           `    } ` +
           `    keybd_event(0x11,0,0,UIntPtr.Zero); System.Threading.Thread.Sleep(45); ` +
           `    keybd_event(0x56,0,0,UIntPtr.Zero); System.Threading.Thread.Sleep(45); ` +
