@@ -190,18 +190,25 @@ export interface SubuContext {
   scheduleReminder?: (delayMs: number, message: string) => void;
   codingMusic?: string;
   setCodingMusic?: (song: string) => void;
+  smartHomeWebhook?: string;
   aiBrainEnabled?: boolean;
   geminiApiKey?: string;
   ollamaModel?: string;
 }
 
 export const VOICE_PROFILES = [
-  { id: "es-BO-SofiaNeural", label: "Sofía · Bolivia (Natural)" },
+  { id: "gemini:Charon", label: "🎙️ Jarvis · Gemini Pro TTS (Ultra-humana)" },
+  { id: "gemini:Aoede", label: "🎙️ AVA · Gemini Pro TTS (Ultra-humana)" },
+  { id: "gemini:Fenrir", label: "🎙️ KAI · Gemini Pro TTS (Grave)" },
+  { id: "gemini:Kore", label: "🎙️ Nova · Gemini Pro TTS (Natural)" },
+  { id: "en-US-BrianMultilingualNeural", label: "✨ Brian HD · Jarvis Grave (Gratis)" },
+  { id: "en-US-AndrewMultilingualNeural", label: "✨ Andrew HD · KAI Natural (Gratis)" },
+  { id: "en-US-EmmaMultilingualNeural", label: "✨ Emma HD · AVA Cálida (Gratis)" },
+  { id: "en-US-AvaMultilingualNeural", label: "✨ Ava HD · Bilingüe ES/EN (Gratis)" },
+  { id: "es-BO-SofiaNeural", label: "Sofía · Bolivia" },
   { id: "es-BO-MarceloNeural", label: "Marcelo · Bolivia" },
-  { id: "en-US-AndrewMultilingualNeural", label: "Andrew · Bilingüe ES/EN (Copilot)" },
-  { id: "en-US-AvaMultilingualNeural", label: "Ava · Bilingüe ES/EN (Copilot)" },
+  { id: "es-MX-JorgeNeural", label: "Jorge · México (Grave)" },
   { id: "es-MX-DaliaNeural", label: "Dalia · México" },
-  { id: "es-MX-JorgeNeural", label: "Jorge · México" },
 ] as const;
 
 function norm(text: string): string {
@@ -277,9 +284,10 @@ let activeAudio: HTMLAudioElement | null = null;
 export async function speakAsSubu(
   text: string,
   enabled: boolean,
-  voiceName = "es-BO-SofiaNeural",
+  voiceName = "en-US-EmmaMultilingualNeural",
   onStart?: () => void,
   onEnd?: () => void,
+  geminiApiKey?: string,
 ): Promise<void> {
   if (!enabled || !text.trim()) return;
   try {
@@ -288,7 +296,7 @@ export async function speakAsSubu(
       activeAudio = null;
     }
     const api = getBridge();
-    const res = await api?.voice_speak(text, voiceName).catch(() => null);
+    const res = await api?.voice_speak(text, voiceName, geminiApiKey).catch(() => null);
     if (res?.audio) {
       const audio = new Audio(res.audio);
       activeAudio = audio;
@@ -707,9 +715,92 @@ export async function executeSubuCommand(
     await api?.set_brightness(60);
     await api?.play_media_query("musica chill relajante", "youtube");
     ctx.setActiveTab?.("music");
-    const reply = "Activando modo descanso: Focus pausado, brillo al 60% y música relajante.";
+    const reply = "Modo descanso activado, Hebert. Focus pausado, brillo al 60 y música suave lista.";
     pushContextTurn("assistant", reply, "play_music");
     return { ok: true, reply };
+  }
+
+  // 1c) BRIEFING INTELIGENTE estilo Jarvis ("buenos días", "resumen del día", "dame el reporte")
+  if (
+    q.includes("resumen del dia") ||
+    q.includes("dame el reporte") ||
+    q.includes("reporte del dia") ||
+    q.includes("briefing") ||
+    q.includes("como esta todo") ||
+    /^(?:buenos dias|buen dia)$/.test(q)
+  ) {
+    const now = new Date();
+    const hr = now.getHours();
+    const greet = hr < 12 ? "Buenos días" : hr < 19 ? "Buenas tardes" : "Buenas noches";
+    const timeStr = now.toLocaleTimeString("es-BO", { hour: "2-digit", minute: "2-digit" });
+    const pending = ctx.todos.filter((t) => !t.done).length;
+    const disk = await api?.get_disk_summary().catch(() => null);
+    let diskPart = `Tienes ${ctx.telemetry.disk_c_free_gb.toFixed(0)} gigas libres en C.`;
+    if (disk?.ok && disk.volumes.length > 0) {
+      const parts = disk.volumes.map((v) => `${v.freeGb} gigas libres en ${v.name.replace(":", "")}`);
+      diskPart = `En DiscoClaro tienes ${parts.join(" y ")}.`;
+    }
+    const tasksPart =
+      pending === 0
+        ? "No tienes tareas pendientes."
+        : pending === 1
+          ? "Tienes 1 tarea pendiente."
+          : `Tienes ${pending} tareas pendientes.`;
+    const reply = `${greet}, Hebert. Son las ${timeStr}. En ${ctx.weather.city} hace ${ctx.weather.temp_c} grados, ${ctx.weather.condition}. ${tasksPart} ${diskPart} ¿En qué proyecto trabajamos hoy?`;
+    ctx.setActiveTab?.("home");
+    pushContextTurn("assistant", reply, "briefing");
+    return { ok: true, reply };
+  }
+
+  // 1d) MODO SEMANA ("organiza mi semana", "modo semana", "planifica mi semana")
+  if (q.includes("organiza mi semana") || q.includes("modo semana") || q.includes("planifica mi semana")) {
+    await api?.launch("https://calendar.google.com");
+    ctx.setActiveTab?.("notes");
+    const pending = ctx.todos.filter((t) => !t.done);
+    const topTasks = pending.slice(0, 2).map((t) => t.text).join(" y ");
+    const reply =
+      pending.length > 0
+        ? `Modo semana activado, Hebert. Abriendo tu calendario. Tus prioridades pendientes son: ${topTasks}.`
+        : "Modo semana activado, Hebert. Abriendo Google Calendar y tus notas para planificar.";
+    pushContextTurn("assistant", reply, "tasks");
+    return { ok: true, reply };
+  }
+
+  // 1e) MODO CASA / MODO NOCHE ("modo casa", "modo noche", "ya llegue")
+  if (q.includes("modo casa") || q.includes("modo noche") || q === "ya llegue") {
+    ctx.setBrightness(40);
+    await api?.set_brightness(40);
+    ctx.setThemeStyle("glass");
+    if (ctx.smartHomeWebhook) {
+      await api?.smart_home(ctx.smartHomeWebhook, "mode_home").catch(() => {});
+    }
+    await api?.play_media_query("lofi chill night beats", "youtube");
+    ctx.setActiveTab?.("home");
+    const reply = ctx.smartHomeWebhook
+      ? "Modo casa activado, Hebert. Luces ajustadas, brillo al 40 y música ambiente lista."
+      : "Modo casa activado, Hebert. Brillo suave al 40, tema oscuro y música ambiente lista.";
+    pushContextTurn("assistant", reply, "mode_home");
+    return { ok: true, reply };
+  }
+
+  // 1f) DOMÓTICA / LUCES ("prende las luces", "apaga las luces")
+  if (/(?:prende|enciende|prendeme|encendeme|apaga|apagame)\s+(?:las?\s+)?luces?/.test(q)) {
+    const turnOn = /(?:prende|enciende|prendeme|encendeme)/.test(q);
+    const action = turnOn ? "lights_on" : "lights_off";
+    if (!ctx.smartHomeWebhook?.trim()) {
+      return {
+        ok: false,
+        reply: "Todavía no vinculaste un webhook de domótica. Pégalo en Ajustes, pestaña Nova e IA, para controlar tus luces.",
+      };
+    }
+    const res = await api?.smart_home(ctx.smartHomeWebhook, action).catch(() => ({ ok: false }));
+    const reply = res?.ok
+      ? turnOn
+        ? "Listo, Hebert. Encendiendo las luces."
+        : "Listo, Hebert. Apagando las luces."
+      : "No pude comunicarme con el webhook de tus luces. Revisa la URL en Ajustes.";
+    pushContextTurn("assistant", reply, "smart_home", action);
+    return { ok: Boolean(res?.ok), reply };
   }
 
   // 2) Recordatorios con alarma hablada ("recuérdame en 15 minutos subir los cambios")
@@ -819,23 +910,25 @@ export async function executeSubuCommand(
     return { ok: true, reply: "¡Claro! Abriendo tu carpeta de la Universidad." };
   }
 
-  // 1. Saludo / Presentación / Cortesía (estilo Jarvis + toque cruceño)
-  if (/^(hola|buenas|buenos dias|buenas tardes|buenas noches|hey|que tal|como estas|saludos)$/.test(q) || q === "") {
+  // 1. Saludo / Presentación / Cortesía (estilo Jarvis/AVA natural)
+  if (/^(hola|buenas|buenas tardes|buenas noches|hey|que tal|como estas|saludos)$/.test(q) || q === "") {
+    const hr = new Date().getHours();
+    const greet = hr < 12 ? "Buenos días" : hr < 19 ? "Buenas tardes" : "Buenas noches";
     return {
       ok: true,
-      reply: `¡Hola Hebert! Aquí ${name}, lista para ayudarte. ¿Qué abrimos o ponemos hoy?`,
+      reply: `${greet}, Hebert. Aquí ${name}. ¿En qué trabajamos hoy?`,
     };
   }
   if (q.includes("quien eres") || q.includes("quien sos") || q.includes("como te llamas") || q.includes("que significas")) {
     return {
       ok: true,
-      reply: `Soy ${name}, tu Núcleo Operativo Virtual de Asistencia. Puedo ponerte música directo, abrir tus apps y proyectos, o leerte tus tareas del día.`,
+      reply: `Soy ${name}, tu Núcleo Operativo Virtual de Asistencia. Puedo darte el resumen del día, abrir tus proyectos, poner música y controlar tu entorno.`,
     };
   }
   if (/^(gracias|muchas gracias|mil gracias|joya|belleza|de una|perfecto|genial|excelente|listo|chau|nos vemos)$/.test(q)) {
     return {
       ok: true,
-      reply: "¡Belleza! Para eso estoy, Hebert. Avísame cuando necesites algo más.",
+      reply: "A la orden, Hebert. Aquí sigo cuando me necesites.",
     };
   }
 

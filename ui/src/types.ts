@@ -166,6 +166,9 @@ export interface IslandConfig {
   alwaysListen: boolean;
   whisperOffline?: boolean;
   codingMusic?: string;
+  hudSounds?: boolean;
+  greetOnStart?: boolean;
+  smartHomeWebhook?: string;
   voiceName: string;
   aiBrainEnabled?: boolean;
   geminiApiKey?: string;
@@ -323,7 +326,19 @@ export interface GlassIslandApi {
   open_path_in_code: (folderPath: string) => Promise<{ ok: boolean; path?: string; folderName?: string; openedWith?: string }>;
   open_project_terminal: (query: string) => Promise<{ ok: boolean; folderName?: string; path?: string }>;
   project_git_status: (query: string) => Promise<{ ok: boolean; folderName?: string; branch?: string; changes?: number }>;
-  voice_speak: (text: string, voice?: string) => Promise<{ audio?: string; voice?: string }>;
+  voice_speak: (
+    text: string,
+    voice?: string,
+    geminiApiKey?: string,
+  ) => Promise<{ audio?: string; voice?: string; engine?: string }>;
+  get_disk_summary: () => Promise<{
+    ok: boolean;
+    volumes: { name: string; freeGb: number; totalGb: number; usedPct: number }[];
+  }>;
+  smart_home: (
+    webhookUrl: string,
+    action: string,
+  ) => Promise<{ ok: boolean; reason?: string }>;
   voice_set_listen: (enabled: boolean) => Promise<{ ok?: boolean; enabled?: boolean }>;
   voice_mute_for: (seconds: number) => Promise<{ ok?: boolean }>;
   voice_set_engine: (useWhisper: boolean) => Promise<{ ok?: boolean; whisper?: boolean }>;

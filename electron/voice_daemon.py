@@ -109,9 +109,20 @@ def _prepare_tts_text(text: str, voice: str) -> str:
     return out
 
 
+_VOICE_PROSODY: dict[str, tuple[str, str]] = {
+    "en-US-BrianMultilingualNeural": ("+3%", "-6Hz"),
+    "en-US-AndrewMultilingualNeural": ("+3%", "-3Hz"),
+    "en-US-EmmaMultilingualNeural": ("+2%", "+0Hz"),
+    "en-US-AvaMultilingualNeural": ("+2%", "+0Hz"),
+    "es-MX-JorgeNeural": ("+4%", "-4Hz"),
+    "es-BO-MarceloNeural": ("+4%", "-2Hz"),
+}
+
+
 async def _synth_mp3_b64(text: str, voice: str) -> str:
     spoken = _prepare_tts_text(text, voice)
-    communicate = edge_tts.Communicate(spoken, voice=voice, rate="+6%")
+    rate, pitch = _VOICE_PROSODY.get(voice, ("+5%", "+0Hz"))
+    communicate = edge_tts.Communicate(spoken, voice=voice, rate=rate, pitch=pitch)
     buf = io.BytesIO()
     async for chunk in communicate.stream():
         if chunk["type"] == "audio":

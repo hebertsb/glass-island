@@ -54,6 +54,7 @@ import {
   VOICE_PROFILES,
   type FolderChoice,
 } from "./utils/subuCommands";
+import { playDoneChime, playThinkChime, playWakeChime } from "./utils/hudSounds";
 import {
   DEFAULT_CONFIG,
   getBridge,
@@ -959,23 +960,26 @@ export default function App() {
           void speakAsSubu(
             alertMsg,
             configRef.current.voiceEnabled !== false,
-            configRef.current.voiceName || "es-BO-SofiaNeural",
+            configRef.current.voiceName || "en-US-EmmaMultilingualNeural",
             () => setSpeaking(true),
             () => setSpeaking(false),
+            configRef.current.geminiApiKey || "",
           );
         }, delayMs);
       },
       codingMusic: config.codingMusic || "Avicii Levels",
       setCodingMusic: (song) => setConfig((p) => ({ ...p, codingMusic: song })),
+      smartHomeWebhook: config.smartHomeWebhook || "",
       aiBrainEnabled: config.aiBrainEnabled !== false,
       geminiApiKey: config.geminiApiKey || "",
-      ollamaModel: config.ollamaModel || "llama3.2",
+      ollamaModel: config.ollamaModel || "qwen2.5:7b",
     });
     setSubuReply(res.reply);
     setUnknownPhrase(res.unknownPhrase ?? null);
     setFolderChoices(res.folderChoices ?? []);
     setKbLearnedCount(getNovaKbStats().learnedCount);
     if (res.ok) {
+      playDoneChime(config.hudSounds !== false);
       triggerBurst("happy", 1400);
       setGreenGlow(true);
       window.setTimeout(() => setGreenGlow(false), 1600);
@@ -1015,12 +1019,13 @@ export default function App() {
       void speakAsSubu(
         res.reply,
         true,
-        config.voiceName || "es-BO-SofiaNeural",
+        config.voiceName || "en-US-EmmaMultilingualNeural",
         () => setSpeaking(true),
         () => {
           setSpeaking(false);
           scheduleCleanReset();
         },
+        config.geminiApiKey || "",
       );
     } else {
       scheduleCleanReset();
@@ -1041,9 +1046,33 @@ export default function App() {
     runSubuOrderRef.current = runSubuOrder;
   });
 
-  // Carga la Base de Conocimiento local de Nova al iniciar
+  // Carga la Base de Conocimiento local de Nova al iniciar + saludo proactivo estilo Jarvis
+  const greetedRef = useRef(false);
   useEffect(() => {
     loadNovaKb().then(() => setKbLearnedCount(getNovaKbStats().learnedCount));
+    const timer = window.setTimeout(() => {
+      if (greetedRef.current) return;
+      greetedRef.current = true;
+      const cfg = configRef.current;
+      if (cfg.greetOnStart === false || cfg.voiceEnabled === false) return;
+      const hr = new Date().getHours();
+      const greet = hr < 12 ? "Buenos días" : hr < 19 ? "Buenas tardes" : "Buenas noches";
+      const line = `${greet}, Hebert. Aquí ${cfg.assistantName || "Nova"}. ¿En qué trabajamos hoy?`;
+      playWakeChime(cfg.hudSounds !== false);
+      setSubuReply(line);
+      void speakAsSubu(
+        line,
+        true,
+        cfg.voiceName || "en-US-EmmaMultilingualNeural",
+        () => setSpeaking(true),
+        () => {
+          setSpeaking(false);
+          window.setTimeout(() => setSubuReply(null), 2600);
+        },
+        cfg.geminiApiKey || "",
+      );
+    }, 2600);
+    return () => window.clearTimeout(timer);
   }, []);
 
   async function handleTeachNova(tool: "play_music" | "open_app" | "web_search" | "add_todo") {
@@ -1145,6 +1174,8 @@ export default function App() {
               collapseTimerRef.current = null;
             }
           }
+          playWakeChime(curCfg.hudSounds !== false);
+          playThinkChime(curCfg.hudSounds !== false);
           setSubuOpen(true);
           setSubuInput(heardText);
           void runSubuOrderRef.current(
@@ -2822,12 +2853,44 @@ export default function App() {
                             <span className="glass-switch__thumb" />
                           </button>
                         </div>
+                        <div
+                          className="switch-row"
+                          onClick={() =>
+                            setConfig((p) => ({ ...p, hudSounds: p.hudSounds === false }))
+                          }
+                          title="Micro-sonidos HUD futuristas al despertar y completar órdenes"
+                        >
+                          <span>🔔 Sonidos HUD</span>
+                          <button
+                            type="button"
+                            className={`glass-switch${config.hudSounds !== false ? " glass-switch--on" : ""}`}
+                            aria-checked={config.hudSounds !== false}
+                          >
+                            <span className="glass-switch__thumb" />
+                          </button>
+                        </div>
+                        <div
+                          className="switch-row"
+                          onClick={() =>
+                            setConfig((p) => ({ ...p, greetOnStart: p.greetOnStart === false }))
+                          }
+                          title="Saludo proactivo estilo Jarvis al abrir GlassIsland"
+                        >
+                          <span>👋 Saludo inicio</span>
+                          <button
+                            type="button"
+                            className={`glass-switch${config.greetOnStart !== false ? " glass-switch--on" : ""}`}
+                            aria-checked={config.greetOnStart !== false}
+                          >
+                            <span className="glass-switch__thumb" />
+                          </button>
+                        </div>
                       </div>
 
                       <div className="glass-card-row" style={{ gap: 6, flexWrap: "wrap" }}>
                         <input
                           className="glass-input"
-                          style={{ width: 96, padding: "5px 8px", fontSize: 11.5 }}
+                          style={{ width: 82, padding: "5px 8px", fontSize: 11.5 }}
                           value={config.assistantName ?? "Nova"}
                           onChange={(e) =>
                             setConfig((p) => ({ ...p, assistantName: e.target.value }))
@@ -2837,8 +2900,8 @@ export default function App() {
                         />
                         <select
                           className="glass-input"
-                          style={{ flex: 1, minWidth: 145, padding: "5px 7px", fontSize: 11 }}
-                          value={config.voiceName || "es-BO-SofiaNeural"}
+                          style={{ flex: 1, minWidth: 165, padding: "5px 7px", fontSize: 11 }}
+                          value={config.voiceName || "en-US-EmmaMultilingualNeural"}
                           onChange={(e) =>
                             setConfig((p) => ({ ...p, voiceName: e.target.value }))
                           }
@@ -2852,15 +2915,17 @@ export default function App() {
                         <button
                           type="button"
                           className="icon-chip icon-chip--active"
-                          onClick={() =>
+                          onClick={() => {
+                            playWakeChime(config.hudSounds !== false);
                             void speakAsSubu(
-                              `¡Hola Hebert! Soy ${config.assistantName || "Nova"}, lista para ayudarte.`,
+                              `Buenas noches, Hebert. Aquí ${config.assistantName || "Nova"}. Todo listo, ¿en qué trabajamos hoy?`,
                               true,
-                              config.voiceName || "es-BO-SofiaNeural",
+                              config.voiceName || "en-US-EmmaMultilingualNeural",
                               () => setSpeaking(true),
                               () => setSpeaking(false),
-                            )
-                          }
+                              config.geminiApiKey || "",
+                            );
+                          }}
                         >
                           ▶ Probar voz
                         </button>
@@ -2875,11 +2940,11 @@ export default function App() {
                           onChange={(e) =>
                             setConfig((p) => ({ ...p, geminiApiKey: e.target.value }))
                           }
-                          placeholder="Gemini API Key (opcional, gratis en AI Studio)"
+                          placeholder="Gemini API Key (para IA + Voz Gemini Pro TTS)"
                         />
                         <input
                           className="glass-input"
-                          style={{ width: 96, padding: "5px 7px", fontSize: 11 }}
+                          style={{ width: 92, padding: "5px 7px", fontSize: 11 }}
                           value={config.ollamaModel ?? "qwen2.5:7b"}
                           onChange={(e) =>
                             setConfig((p) => ({ ...p, ollamaModel: e.target.value }))
@@ -2889,13 +2954,23 @@ export default function App() {
                         />
                         <input
                           className="glass-input"
-                          style={{ width: 120, padding: "5px 7px", fontSize: 11 }}
+                          style={{ width: 105, padding: "5px 7px", fontSize: 11 }}
                           value={config.codingMusic ?? "Avicii Levels"}
                           onChange={(e) =>
                             setConfig((p) => ({ ...p, codingMusic: e.target.value }))
                           }
-                          placeholder="Música proyecto"
+                          placeholder="Música"
                           title="Canción o género para Modo Programación / Modo Proyecto"
+                        />
+                        <input
+                          className="glass-input"
+                          style={{ width: 115, padding: "5px 7px", fontSize: 11 }}
+                          value={config.smartHomeWebhook ?? ""}
+                          onChange={(e) =>
+                            setConfig((p) => ({ ...p, smartHomeWebhook: e.target.value }))
+                          }
+                          placeholder="Webhook luces"
+                          title="URL webhook opcional para Home Assistant / IFTTT / Tuya"
                         />
                       </div>
                     </div>

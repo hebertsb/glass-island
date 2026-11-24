@@ -1606,11 +1606,222 @@ app.whenReady().then(() => {
     }
   });
 
-  ipcMain.handle("island:voice-speak", async (_e, text, voice) => {
+  function pcm24kToWavBase64(pcmBuf) {
+    const sampleRate = 24000;
+    const numChannels = 1;
+    const bitsPerSample = 16;
+    const byteRate = sampleRate * numChannels * (bitsPerSample / 8);
+    const blockAlign = numChannels * (bitsPerSample / 8);
+    const header = Buffer.alloc(44);
+    header.write("RIFF", 0);
+    header.writeUInt32LE(36 + pcmBuf.length, 4);
+    header.write("WAVE", 8);
+    header.write("fmt ", 12);
+    header.writeUInt32LE(16, 16);
+    header.writeUInt16LE(1, 20);
+    header.writeUInt16LE(numChannels, 22);
+    header.writeUInt32LE(sampleRate, 24);
+    header.writeUInt32LE(byteRate, 28);
+    header.writeUInt16LE(blockAlign, 32);
+    header.writeUInt16LE(bitsPerSample, 34);
+    header.write("data", 36);
+    header.writeUInt32LE(pcmBuf.length, 40);
+    return "data:audio/wav;base64," + Buffer.concat([header, pcmBuf]).toString("base64");
+  }
+
+  function synthesizeGeminiTts(text, geminiVoice, apiKey) {
+    return new Promise((resolve) => {
+      if (!apiKey || !text) {
+        resolve("");
+        return;
+      }
+      const body = JSON.stringify({
+        contents: [
+          {
+            parts: [
+              {
+                text: `Habla en español latino natural, cálido, seguro y conversacional (como un asistente personal real tipo Jarvis/AVA, sin sonar robótico). Di exactamente esto: ${text}`,
+              },
+            ],
+          },
+        ],
+        generationConfig: {
+          responseModalities: ["AUDIO"],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: { voiceName: geminiVoice || "Charon" },
+            },
+          },
+        },
+      });
+      const req = https.request(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${encodeURIComponent(apiKey)}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(body),
+          },
+          timeout: 12000,
+        },
+        (res) => {
+          let raw = "";
+          res.setEncoding("utf8");
+          res.on("data", (chunk) => {
+            raw += chunk;
+          });
+          res.on("end", () => {
+            try {
+              const parsed = JSON.parse(raw);
+              const part = parsed?.candidates?.[0]?.content?.parts?.find(
+                (p) => p?.inlineData?.data,
+              );
+              const b64 = part?.inlineData?.data;
+              const mime = String(part?.inlineData?.mimeType || "");
+              if (!b64) {
+                resolve("");
+                return;
+              }
+              if (mime.includes("wav") || mime.includes("mpeg") || mime.includes("mp3")) {
+                resolve(`data:${mime};base64,${b64}`);
+                return;
+              }
+              const pcmBuf = Buffer.from(b64, "base64");
+              resolve(pcm24kToWavBase64(pcmBuf));
+            } catch {
+              resolve("");
+            }
+          });
+        },
+      );
+      req.on("error", () => resolve(""));
+      req.on("timeout", () => {
+        req.destroy();
+        resolve("");
+      });
+      req.write(body);
+      req.end();
+    });
+  }
+
+  ipcMain.handle("island:voice-speak", async (_e, text, voice, geminiApiKey) => {
+    const cleanText = String(text || "").trim();
+    const requestedVoice = String(voice || "en-US-EmmaMultilingualNeural");
+    if (!cleanText) return { audio: "", voice: requestedVoice };
+
+    if (requestedVoice.startsWith("gemini:")) {
+      const gVoice = requestedVoice.slice("gemini:".length).trim() || "Charon";
+      let key = String(geminiApiKey || "").trim();
+      if (!key) {
+        try {
+          if (fs.existsSync(CONFIG_FILE)) {
+            const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
+            key = String(cfg?.geminiApiKey || "").trim();
+          }
+        } catch {
+          // ignore
+        }
+      }
+      if (key) {
+        callVoice({ cmd: "mute_for", seconds: Math.max(2.5, cleanText.length * 0.08) }, 1500).catch(
+          () => {},
+        );
+        const wav = await synthesizeGeminiTts(cleanText, gVoice, key);
+        if (wav) {
+          return { audio: wav, voice: requestedVoice, engine: "gemini-tts" };
+        }
+      }
+      // Fallback automático a voz Multilingual HD más parecida si no hay API key o falló la red
+      const isMale = /charon|fenrir|puck|orus/i.test(gVoice);
+      const fallbackVoice = isMale
+        ? "en-US-BrianMultilingualNeural"
+        : "en-US-EmmaMultilingualNeural";
+      return await callVoice({ cmd: "speak", text: cleanText, voice: fallbackVoice }, 12000);
+    }
+
     return await callVoice(
-      { cmd: "speak", text: String(text || ""), voice: String(voice || "es-BO-SofiaNeural") },
+      { cmd: "speak", text: cleanText, voice: requestedVoice },
       12000,
     );
+  });
+
+  ipcMain.handle("island:get-disk-summary", () => {
+    return new Promise((resolve) => {
+      const http = require("http");
+      const req = http.get("http://127.0.0.1:8347/summary", { timeout: 1800 }, (res) => {
+        let raw = "";
+        res.setEncoding("utf8");
+        res.on("data", (c) => {
+          raw += c;
+        });
+        res.on("end", () => {
+          try {
+            const parsed = JSON.parse(raw);
+            const vols = Array.isArray(parsed?.volumes)
+              ? parsed.volumes.map((v) => ({
+                  name: v?.volume?.name || "C:",
+                  freeGb: Math.round(((v?.volume?.free_bytes || 0) / 1e9) * 10) / 10,
+                  totalGb: Math.round(((v?.volume?.total_bytes || 0) / 1e9) * 10) / 10,
+                  usedPct: v?.volume?.total_bytes
+                    ? Math.round(((v.volume.used_bytes || 0) / v.volume.total_bytes) * 100)
+                    : 0,
+                }))
+              : [];
+            resolve({ ok: vols.length > 0, volumes: vols });
+          } catch {
+            resolve({ ok: false, volumes: [] });
+          }
+        });
+      });
+      req.on("error", () => resolve({ ok: false, volumes: [] }));
+      req.on("timeout", () => {
+        req.destroy();
+        resolve({ ok: false, volumes: [] });
+      });
+    });
+  });
+
+  ipcMain.handle("island:smart-home", (_e, webhookUrl, action) => {
+    return new Promise((resolve) => {
+      const target = String(webhookUrl || "").trim();
+      if (!target || !/^https?:\/\//i.test(target)) {
+        resolve({ ok: false, reason: "no_webhook" });
+        return;
+      }
+      try {
+        const parsedUrl = new URL(target);
+        const mod = parsedUrl.protocol === "https:" ? https : require("http");
+        const body = JSON.stringify({
+          action: String(action || "toggle"),
+          source: "glass-island-nova",
+          timestamp: new Date().toISOString(),
+        });
+        const req = mod.request(
+          parsedUrl,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Content-Length": Buffer.byteLength(body),
+            },
+            timeout: 4500,
+          },
+          (res) => {
+            res.resume();
+            resolve({ ok: (res.statusCode || 0) >= 200 && (res.statusCode || 0) < 400 });
+          },
+        );
+        req.on("error", () => resolve({ ok: false, reason: "network" }));
+        req.on("timeout", () => {
+          req.destroy();
+          resolve({ ok: false, reason: "timeout" });
+        });
+        req.write(body);
+        req.end();
+      } catch {
+        resolve({ ok: false, reason: "invalid_url" });
+      }
+    });
   });
 
   ipcMain.handle("island:voice-set-listen", async (_e, enabled) => {
