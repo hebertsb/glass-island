@@ -451,10 +451,9 @@ export async function executeSubuCommand(
   q = resolveContextualFollowup(q);
   pushContextTurn("user", q);
 
-  // Delegación a Agentes IA instalados ("ve a Claude/Copilot y escribe qué significa MCP")
-  // Incluye variantes fonéticas frecuentes de STT en español ("copalo", "copiloto", "claro", "claud")
+  // Delegación a Agentes IA instalados ("ve a Copilot y escribe...", "busca en Copilot qué significa MCP", "busca copilot qué es...")
   const agentQueryMatch = q.match(
-    /^(?:ve a|anda a|entra a|abre|abrime|preguntale a|consulta en|dile a)\s+(claude|claud|claro|copilot|copalo|copiloto|copailot|co pilot|copilo|chatgpt|codex|antigravity|perplexity)\s+(?:y\s+)?(?:escribe|escribi|busca|buscame|pregunta|preguntale|consulta|pon|dile|sobre|que)\s+(.+)$/,
+    /^(?:(?:ve a|anda a|entra a|abre|abrime|preguntale a|pregunta a|consulta en|consulta a|busca en|buscame en|busca|buscame|dile a)\s+)?(claude|claud|claro|copilot|copalo|copiloto|copailot|co pilot|copilo|chatgpt|codex|antigravity|perplexity)\s+(?:(?:y\s+)?(?:escribe|escribi|busca|buscame|pregunta|preguntale|consulta|pon|dile|sobre)\s+)?(.+)$/,
   );
   if (agentQueryMatch) {
     const rawAgent = agentQueryMatch[1].trim();
