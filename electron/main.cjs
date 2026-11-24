@@ -846,23 +846,25 @@ app.whenReady().then(() => {
       } else {
         await shell.openPath(t);
       }
-      // Espera a que la ventana real de Copilot/Claude aparezca y reciba foco antes de pegar y enviar
+      // Espera a que la ventana real de Copilot/Claude aparezca y reciba foco,
+      // luego envía Ctrl+V + Enter a nivel Win32 (keybd_event) para que UWP/WebView2 nunca ignore Ctrl
       if (txt) {
         const safeLabel = label || "Copilot";
         const psPaste =
+          `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class GIPaste { [DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo); public static void Send() { keybd_event(0x11,0,0,UIntPtr.Zero); System.Threading.Thread.Sleep(40); keybd_event(0x56,0,0,UIntPtr.Zero); System.Threading.Thread.Sleep(40); keybd_event(0x56,0,2,UIntPtr.Zero); System.Threading.Thread.Sleep(40); keybd_event(0x11,0,2,UIntPtr.Zero); System.Threading.Thread.Sleep(350); keybd_event(0x0D,0,0,UIntPtr.Zero); System.Threading.Thread.Sleep(40); keybd_event(0x0D,0,2,UIntPtr.Zero); } }'; ` +
           `$ws = New-Object -ComObject WScript.Shell; ` +
           `$activated = $false; ` +
           `for ($i = 0; $i -lt 14; $i++) { ` +
           `  Start-Sleep -Milliseconds 350; ` +
           `  if ($ws.AppActivate('${safeLabel}')) { $activated = $true; break } ` +
           `}; ` +
-          `Start-Sleep -Milliseconds 950; ` +
-          `if ($activated) { $ws.AppActivate('${safeLabel}') | Out-Null; Start-Sleep -Milliseconds 200 }; ` +
-          `$ws.SendKeys('^v'); Start-Sleep -Milliseconds 350; $ws.SendKeys('{ENTER}')`;
+          `Start-Sleep -Milliseconds 900; ` +
+          `if ($activated) { $ws.AppActivate('${safeLabel}') | Out-Null; Start-Sleep -Milliseconds 250 }; ` +
+          `[GIPaste]::Send()`;
         execFile(
           PS_EXE,
           ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", psPaste],
-          { windowsHide: true, timeout: 9000 },
+          { windowsHide: true, timeout: 10000 },
           () => {},
         );
       }
