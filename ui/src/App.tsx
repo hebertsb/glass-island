@@ -159,33 +159,35 @@ function AgentBrandLogo({
   const low = name.toLowerCase();
   if (low.includes("copilot")) {
     return (
-      <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true" style={{ flexShrink: 0 }}>
         <defs>
-          <linearGradient id="cp-a" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#38bdf8" />
-            <stop offset="50%" stopColor="#818cf8" />
-            <stop offset="100%" stopColor="#f472b6" />
+          <linearGradient id="cp-top" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#0ea5e9" />
+            <stop offset="100%" stopColor="#1d4ed8" />
           </linearGradient>
-          <linearGradient id="cp-b" x1="0" y1="1" x2="1" y2="0">
-            <stop offset="0%" stopColor="#34d399" />
-            <stop offset="55%" stopColor="#38bdf8" />
-            <stop offset="100%" stopColor="#fbbf24" />
+          <linearGradient id="cp-left" x1="0.2" y1="0" x2="0.4" y2="1">
+            <stop offset="0%" stopColor="#38bdf8" />
+            <stop offset="55%" stopColor="#22c55e" />
+            <stop offset="100%" stopColor="#facc15" />
+          </linearGradient>
+          <linearGradient id="cp-bot" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#f97316" />
+            <stop offset="100%" stopColor="#ef4444" />
+          </linearGradient>
+          <linearGradient id="cp-right" x1="0.6" y1="0" x2="0.3" y2="1">
+            <stop offset="0%" stopColor="#a855f7" />
+            <stop offset="55%" stopColor="#ec4899" />
+            <stop offset="100%" stopColor="#fb923c" />
           </linearGradient>
         </defs>
-        <path
-          d="M5.5 14.5C4 14.5 3 13.4 3 11.8c0-2.7 1.8-6.3 5.2-6.3 1.7 0 2.7.9 3.4 2.4l1.2 2.8c.5 1.2 1.2 2.3 2.5 2.3 1.1 0 1.8-.8 1.8-2 0-1.6-1-3.4-2.8-3.4-.8 0-1.4.3-1.9.8"
-          fill="none"
-          stroke="url(#cp-a)"
-          strokeWidth="3.2"
-          strokeLinecap="round"
-        />
-        <path
-          d="M18.5 9.5c1.5 0 2.5 1.1 2.5 2.7 0 2.7-1.8 6.3-5.2 6.3-1.7 0-2.7-.9-3.4-2.4l-1.2-2.8c-.5-1.2-1.2-2.3-2.5-2.3-1.1 0-1.8.8-1.8 2 0 1.6 1 3.4 2.8 3.4.8 0 1.4-.3 1.9-.8"
-          fill="none"
-          stroke="url(#cp-b)"
-          strokeWidth="3.2"
-          strokeLinecap="round"
-        />
+        {/* Cinta trasera superior azul */}
+        <path d="M12.5 5h6.5c2 0 3.3 1.4 3.8 3.3l.8 2.7H14.5l-2-6z" fill="url(#cp-top)" />
+        {/* Cinta trasera inferior naranja */}
+        <path d="M8.5 21h9.2l2 6h-6.6c-2 0-3.3-1.4-3.8-3.3L8.5 21z" fill="url(#cp-bot)" />
+        {/* Cinta frontal izquierda (azul -> verde -> amarillo) */}
+        <path d="M9.6 5h6.8c-1.4 0-2.4.9-2.8 2.3L10.3 19c-.4 1.3-1.5 2-2.9 2H5.2c-1.8 0-3-1.5-2.5-3.3L6 8.3C6.5 6.3 7.8 5 9.6 5z" fill="url(#cp-left)" />
+        {/* Cinta frontal derecha (morado -> rosa -> naranja) */}
+        <path d="M22.4 27h-6.8c1.4 0 2.4-.9 2.8-2.3L21.7 13c.4-1.3 1.5-2 2.9-2h2.2c1.8 0 3 1.5 2.5 3.3L26 23.7c-.5 2-1.8 3.3-3.6 3.3z" fill="url(#cp-right)" />
       </svg>
     );
   }

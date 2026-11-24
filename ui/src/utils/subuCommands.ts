@@ -431,8 +431,12 @@ export async function executeSubuCommand(
     }
   }
 
-  // Confirmación contextual pendiente ("sí", "dale", "de una", "ábrelo") -> abre la app y pega el prompt
-  if (/^(?:si|sii|claro|dale|de una|porfa|por favor|abrelo|abrela|abrilo|abrila|si abrelo|si abrela|si porfa|quiero verlo|mostramelo)$/.test(q)) {
+  // Confirmación contextual pendiente ("sí", "sí ábrelo en copilot", "dale", "de una") -> abre la app y pega el prompt
+  if (
+    /^(?:si|sii|claro|dale|de una|porfa|por favor|abrelo|abrela|abrilo|abrila|quiero verlo|mostramelo)\b/.test(
+      q,
+    )
+  ) {
     const pending = consumePendingConfirm();
     if (pending) {
       if (pending.promptText && api?.launch_and_paste) {
@@ -441,7 +445,7 @@ export async function executeSubuCommand(
         await api?.launch(pending.target);
       }
       const reply = pending.promptText
-        ? `¡De una! Abriendo ${pending.label} y enviando tu consulta.`
+        ? `¡De una! Abriendo ${pending.label} y enviando "${pending.promptText}".`
         : `¡De una! Abriendo ${pending.label} para que lo veas tú mismo.`;
       pushContextTurn("assistant", reply, "open_app", pending.label);
       return { ok: true, reply };
