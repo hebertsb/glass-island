@@ -235,7 +235,6 @@ function createWindow() {
     title: "",
     icon: fs.existsSync(ICON_PATH) ? ICON_PATH : undefined,
     frame: false,
-    thickFrame: false,
     transparent: true,
     hasShadow: false,
     resizable: false,
@@ -244,7 +243,6 @@ function createWindow() {
     fullscreenable: false,
     alwaysOnTop: true,
     skipTaskbar: true,
-    type: "toolbar",
     backgroundColor: "#00000000",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
