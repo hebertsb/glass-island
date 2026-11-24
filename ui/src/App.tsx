@@ -1118,9 +1118,10 @@ export default function App() {
           void speakAsSubu(
             alertMsg,
             configRef.current.voiceEnabled !== false,
-            configRef.current.voiceName || "es-BO-SofiaNeural",
+            configRef.current.voiceName || "en-US-EmmaMultilingualNeural",
             () => setSpeaking(true),
             () => setSpeaking(false),
+            configRef.current.geminiApiKey || "",
           );
         }, delayMs);
       },
@@ -1136,12 +1137,13 @@ export default function App() {
     void speakAsSubu(
       learnedReply,
       config.voiceEnabled !== false,
-      config.voiceName || "es-BO-SofiaNeural",
+      config.voiceName || "en-US-EmmaMultilingualNeural",
       () => setSpeaking(true),
       () => {
         setSpeaking(false);
         clearVoiceTimerRef.current = window.setTimeout(() => setSubuReply(null), 2200);
       },
+      config.geminiApiKey || "",
     );
   }
 
@@ -1619,12 +1621,13 @@ export default function App() {
                             void speakAsSubu(
                               msg,
                               config.voiceEnabled !== false,
-                              config.voiceName || "es-BO-SofiaNeural",
+                              config.voiceName || "en-US-EmmaMultilingualNeural",
                               () => setSpeaking(true),
                               () => {
                                 setSpeaking(false);
                                 clearVoiceTimerRef.current = window.setTimeout(() => setSubuReply(null), 2400);
                               },
+                              config.geminiApiKey || "",
                             );
                           }}
                           title={fc.path}

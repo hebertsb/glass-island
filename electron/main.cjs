@@ -1645,7 +1645,7 @@ app.whenReady().then(() => {
           {
             parts: [
               {
-                text: `[Español latino natural, cálido y seguro] ${text}`,
+                text: `Lee exactamente en voz alta en español latino natural y sereno (no agregues ni cambies palabras): "${text}"`,
               },
             ],
           },
@@ -1850,7 +1850,24 @@ app.whenReady().then(() => {
           return { audio: result.dataUrl, voice: requestedVoice, engine: "gemini-tts" };
         }
       }
-      // Fallback automático a voz Multilingual HD más parecida si no hay API key o falló la red
+      // Si Gemini TTS falló o llegó al límite de peticiones por minuto, usa PRIMERO tu voz clonada jarvis_ref.wav
+      // en tu RTX 5050 para mantener EXACTAMENTE LA MISMA VOZ de Jarvis sin cambiar a otra persona
+      if (fs.existsSync(JARVIS_REF_WAV) && /charon|fenrir/i.test(gVoice)) {
+        const cloned = await callVoice(
+          { cmd: "speak_clone", text: cleanText, ref_wav: JARVIS_REF_WAV },
+          25000,
+        );
+        if (cloned?.audio) {
+          try {
+            const b64 = String(cloned.audio).replace(/^data:audio\/wav;base64,/, "");
+            writeVoiceCache(requestedVoice, cleanText, Buffer.from(b64, "base64"));
+          } catch {
+            // ignore
+          }
+          return { audio: cloned.audio, voice: requestedVoice, engine: "clone-fallback" };
+        }
+      }
+      // Último recurso solo si el clonador offline aún no está disponible
       const isMale = /charon|fenrir|puck|orus/i.test(gVoice);
       const fallbackVoice = isMale
         ? "en-US-BrianMultilingualNeural"
