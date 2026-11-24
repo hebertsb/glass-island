@@ -1402,6 +1402,7 @@ export default function App() {
               color={config.robotColor}
               size="md"
               showMouth={config.showMouth}
+              speaking={speaking}
             />
           </div>
         ) : (
@@ -1424,6 +1425,7 @@ export default function App() {
                   color={config.robotColor}
                   size="sm"
                   showMouth={config.showMouth}
+                  speaking={speaking}
                   onClick={handleRobotPoke}
                   title="Tócame para cambiar gesto"
                 />

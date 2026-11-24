@@ -1834,7 +1834,11 @@ app.whenReady().then(() => {
         callVoice({ cmd: "mute_for", seconds: Math.max(2.5, cleanText.length * 0.08) }, 1500).catch(
           () => {},
         );
-        const result = await synthesizeGeminiTts(cleanText, gVoice, key);
+        let result = await synthesizeGeminiTts(cleanText, gVoice, key);
+        if (!result?.dataUrl) {
+          await new Promise((r) => setTimeout(r, 450));
+          result = await synthesizeGeminiTts(cleanText, gVoice, key);
+        }
         if (result?.dataUrl) {
           if (result.wavBuf) {
             writeVoiceCache(requestedVoice, cleanText, result.wavBuf);
@@ -1850,12 +1854,11 @@ app.whenReady().then(() => {
           return { audio: result.dataUrl, voice: requestedVoice, engine: "gemini-tts" };
         }
       }
-      // Si Gemini TTS falló o llegó al límite de peticiones por minuto, usa PRIMERO tu voz clonada jarvis_ref.wav
-      // en tu RTX 5050 para mantener EXACTAMENTE LA MISMA VOZ de Jarvis sin cambiar a otra persona
+      // Si el clonador local ya está cargado en GPU, úsalo (auto_load=false para no bloquear nunca con descargas)
       if (fs.existsSync(JARVIS_REF_WAV) && /charon|fenrir/i.test(gVoice)) {
         const cloned = await callVoice(
-          { cmd: "speak_clone", text: cleanText, ref_wav: JARVIS_REF_WAV },
-          25000,
+          { cmd: "speak_clone", text: cleanText, ref_wav: JARVIS_REF_WAV, auto_load: false },
+          6000,
         );
         if (cloned?.audio) {
           try {
@@ -1867,7 +1870,7 @@ app.whenReady().then(() => {
           return { audio: cloned.audio, voice: requestedVoice, engine: "clone-fallback" };
         }
       }
-      // Último recurso solo si el clonador offline aún no está disponible
+      // Respaldo instantáneo (300 ms) para garantizar que Nova NUNCA quede en silencio
       const isMale = /charon|fenrir|puck|orus/i.test(gVoice);
       const fallbackVoice = isMale
         ? "en-US-BrianMultilingualNeural"

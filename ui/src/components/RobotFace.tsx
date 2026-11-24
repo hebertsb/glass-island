@@ -6,6 +6,7 @@ interface RobotFaceProps {
   color?: string;
   size?: "xs" | "sm" | "md";
   showMouth?: boolean;
+  speaking?: boolean;
   onClick?: () => void;
   title?: string;
 }
@@ -20,6 +21,7 @@ export default function RobotFace({
   color = "#f8fafc",
   size = "sm",
   showMouth = false,
+  speaking = false,
   onClick,
   title,
 }: RobotFaceProps) {
@@ -178,27 +180,55 @@ export default function RobotFace({
     >
       <svg
         width={dims.w}
-        height={showMouth ? dims.h + 5 : dims.h}
-        viewBox={showMouth ? "0 0 56 26" : "0 0 56 20"}
+        height={showMouth || speaking ? dims.h + 6 : dims.h}
+        viewBox={showMouth || speaking ? "0 0 56 26" : "0 0 56 20"}
         aria-hidden="true"
       >
         {renderEye(17, false)}
         {renderEye(39, true)}
-        {showMouth && (
-          <path
-            d={
-              mood === "happy" || mood === "excited"
-                ? "M23 19 Q28 24 33 19"
-                : mood === "angry"
-                  ? "M23 22 Q28 18 33 22"
-                  : "M24 20.5 L32 20.5"
-            }
-            fill="none"
-            stroke={eyeColor}
-            strokeWidth="1.9"
-            strokeLinecap="round"
-            opacity="0.85"
-          />
+        {speaking ? (
+          <g className="robot-mouth-wave" aria-hidden="true">
+            {[
+              { x: 19, h: 4.5, dur: "0.42s", delay: "0s" },
+              { x: 23, h: 7.2, dur: "0.34s", delay: "0.08s" },
+              { x: 27, h: 9.0, dur: "0.38s", delay: "0.14s" },
+              { x: 31, h: 7.2, dur: "0.36s", delay: "0.05s" },
+              { x: 35, h: 4.5, dur: "0.44s", delay: "0.12s" },
+            ].map((bar, i) => (
+              <rect
+                key={i}
+                className="robot-mouth-wave__bar"
+                x={bar.x}
+                y={21 - bar.h / 2}
+                width="2.3"
+                height={bar.h}
+                rx="1.15"
+                fill={eyeColor}
+                style={{
+                  transformOrigin: `${bar.x + 1.15}px 21px`,
+                  animationDuration: bar.dur,
+                  animationDelay: bar.delay,
+                }}
+              />
+            ))}
+          </g>
+        ) : (
+          showMouth && (
+            <path
+              d={
+                mood === "happy" || mood === "excited"
+                  ? "M23 19 Q28 24 33 19"
+                  : mood === "angry"
+                    ? "M23 22 Q28 18 33 22"
+                    : "M24 20.5 L32 20.5"
+              }
+              fill="none"
+              stroke={eyeColor}
+              strokeWidth="1.9"
+              strokeLinecap="round"
+              opacity="0.85"
+            />
+          )
         )}
       </svg>
     </span>

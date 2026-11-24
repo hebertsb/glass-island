@@ -39,18 +39,40 @@ _use_whisper = False
 _whisper_model = None
 _whisper_loading = False
 _clone_model = None
+_clone_loading = False
 
 
-def _synth_clone_wav_b64(text: str, ref_wav: str) -> str:
-    """Clonación Zero-Shot local en GPU NVIDIA usando Chatterbox Multilingual (si está instalado)."""
-    global _clone_model
-    try:
-        import torch  # type: ignore
-        from chatterbox.mtl_tts import ChatterboxMultilingualTTS  # type: ignore
+def _ensure_clone_async() -> None:
+    global _clone_model, _clone_loading
+    if _clone_model is not None or _clone_loading:
+        return
+    _clone_loading = True
 
-        if _clone_model is None:
+    def _loader() -> None:
+        global _clone_model, _clone_loading
+        try:
+            import torch  # type: ignore
+            from chatterbox.mtl_tts import ChatterboxMultilingualTTS  # type: ignore
+
             device = "cuda" if torch.cuda.is_available() else "cpu"
             _clone_model = ChatterboxMultilingualTTS.from_pretrained(device=device)
+            emit({"event": "clone_ready", "device": device})
+        except Exception as exc:
+            emit({"event": "clone_error", "message": str(exc)})
+        finally:
+            _clone_loading = False
+
+    threading.Thread(target=_loader, daemon=True).start()
+
+
+def _synth_clone_wav_b64(text: str, ref_wav: str, auto_load: bool = True) -> str:
+    """Clonación Zero-Shot local en GPU NVIDIA usando Chatterbox Multilingual (nunca bloquea stdin)."""
+    global _clone_model
+    if _clone_model is None:
+        if auto_load:
+            _ensure_clone_async()
+        return ""
+    try:
         wav_tensor = _clone_model.generate(
             text,
             language_id="es",
@@ -337,11 +359,13 @@ def _stdin_loop() -> None:
         elif cmd == "speak_clone":
             text = str(req.get("text", "")).strip()
             ref_wav = str(req.get("ref_wav", "")).strip()
+            auto_load = bool(req.get("auto_load", True))
             audio_b64 = ""
             if text and ref_wav:
-                with _state_lock:
-                    _muted_for_tts_until = time.monotonic() + max(2.5, len(text) * 0.08)
-                audio_b64 = _synth_clone_wav_b64(text, ref_wav)
+                audio_b64 = _synth_clone_wav_b64(text, ref_wav, auto_load=auto_load)
+                if audio_b64:
+                    with _state_lock:
+                        _muted_for_tts_until = time.monotonic() + max(2.5, len(text) * 0.08)
             emit({"id": req_id, "data": {"audio": audio_b64, "voice": "clone:jarvis"}})
         elif cmd == "quit":
             break

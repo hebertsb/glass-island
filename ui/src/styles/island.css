@@ -1018,3 +1018,23 @@ body,
   border-radius: 99px;
   background: linear-gradient(90deg, #22d3ee, #34d399);
 }
+
+/* Ondas animadas en la boquita del robot cuando Nova está hablando */
+.robot-mouth-wave__bar {
+  animation: robot-mouth-pulse 0.38s ease-in-out infinite alternate;
+}
+
+@keyframes robot-mouth-pulse {
+  0% {
+    transform: scaleY(0.28);
+    opacity: 0.65;
+  }
+  50% {
+    transform: scaleY(1.18);
+    opacity: 1;
+  }
+  100% {
+    transform: scaleY(0.45);
+    opacity: 0.85;
+  }
+}
