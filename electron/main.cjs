@@ -232,13 +232,19 @@ function createWindow() {
     height: CANVAS_H,
     x: Math.round((sw - CANVAS_W) / 2),
     y: 0,
+    title: "",
     icon: fs.existsSync(ICON_PATH) ? ICON_PATH : undefined,
     frame: false,
+    thickFrame: false,
     transparent: true,
     hasShadow: false,
     resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
     alwaysOnTop: true,
     skipTaskbar: true,
+    type: "toolbar",
     backgroundColor: "#00000000",
     webPreferences: {
       preload: path.join(__dirname, "preload.cjs"),
@@ -246,6 +252,9 @@ function createWindow() {
       nodeIntegration: false,
     },
   });
+
+  win.removeMenu();
+  win.setMenuBarVisibility(false);
 
   win.setAlwaysOnTop(true, "screen-saver");
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
