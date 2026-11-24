@@ -451,32 +451,32 @@ export async function executeSubuCommand(
   q = resolveContextualFollowup(q);
   pushContextTurn("user", q);
 
-  // Delegación a Agentes IA instalados ("ve a Copilot y escribe...", "busca en Copilot qué significa MCP", "busca copilot qué es...")
+  // Delegación a Agentes IA instalados — detecta CUALQUIER conjugación ("quiero que busques en copilote qué significa mcp",
+  // "busca en copilot...", "ve a claude y escribe...", "pregúntale a copilot...")
   const agentQueryMatch = q.match(
-    /^(?:(?:ve a|anda a|entra a|abre|abrime|preguntale a|pregunta a|consulta en|consulta a|busca en|buscame en|busca|buscame|dile a)\s+)?(claude|claud|claro|copilot|copalo|copiloto|copailot|co pilot|copilo|chatgpt|codex|antigravity|perplexity)\s+(?:(?:y\s+)?(?:escribe|escribi|busca|buscame|pregunta|preguntale|consulta|pon|dile|sobre)\s+)?(.+)$/,
+    /\b(claude|claud|claro|copilot|copilote|copiloto|copalo|copailot|co pilot|copilo|chatgpt|codex|antigravity|perplexity)\b\s+(?:(?:y\s+)?(?:escribe|escribi|escribas|busca|buscame|busques|pregunta|preguntale|preguntes|consulta|consultes|pon|dile|sobre)\s+)?(.+)$/,
   );
-  if (agentQueryMatch) {
+  if (agentQueryMatch && agentQueryMatch[2].trim().length >= 3) {
     const rawAgent = agentQueryMatch[1].trim();
-    const agentName = /^(copalo|copiloto|copailot|co pilot|copilo)$/.test(rawAgent)
+    const agentName = /^(copalo|copiloto|copilote|copailot|co pilot|copilo)$/.test(rawAgent)
       ? "copilot"
       : /^(claud|claro)$/.test(rawAgent)
         ? "claude"
         : rawAgent;
     const promptText = agentQueryMatch[2].trim();
     const prettyAgent = agentName.charAt(0).toUpperCase() + agentName.slice(1);
-    // 1. Cambia la pestaña de la isla a la tarjeta de esa app (si está en el Dock) y muestra el prompt escrito
+
     const widget = ctx.appWidgets.find(
-      (w) =>
-        norm(w.name).includes(agentName) || norm(w.processName).includes(agentName),
+      (w) => norm(w.name).includes(agentName) || norm(w.processName).includes(agentName),
     );
-    if (widget) {
-      ctx.setActiveTab?.(`app:${widget.id}`);
-    }
+    if (widget) ctx.setActiveTab?.(`app:${widget.id}`);
     ctx.setQuickPrompt?.(promptText);
     await api?.set_clipboard(promptText).catch(() => {});
 
-    // 2. Determina el ejecutable/URL para abrirla si el usuario confirma "sí"
-    let launchTarget = widget?.exePath || WEB_FALLBACKS[agentName]?.url || `https://www.google.com/search?q=${encodeURIComponent(promptText)}`;
+    let launchTarget =
+      widget?.exePath ||
+      WEB_FALLBACKS[agentName]?.url ||
+      `https://www.google.com/search?q=${encodeURIComponent(promptText)}`;
     if (!widget) {
       let appsList = ctx.installedApps;
       if (appsList.length === 0) appsList = (await api?.list_installed_apps().catch(() => [])) || [];
@@ -486,33 +486,14 @@ export async function executeSubuCommand(
       if (inst) launchTarget = inst.lnkPath || inst.exePath;
     }
 
-    // 3. Si el cerebro IA híbrido está activo, responde en 1 frase qué encontró y pregunta si quiere abrir la app
-    let briefAnswer = "";
-    if (ctx.aiBrainEnabled !== false && api?.nova_llm_route) {
-      const llm = await api
-        .nova_llm_route({
-          utterance: `Responde en máximo 20 palabras en español claro qué es o responde brevemente a: ${promptText}. Usa tool "chat".`,
-          assistantName: name,
-          geminiApiKey: ctx.geminiApiKey,
-          ollamaModel: ctx.ollamaModel || "qwen2.5:7b",
-          contextSummary: `El usuario pidió consultar en ${prettyAgent}.`,
-        })
-        .catch(() => null);
-      if (llm?.ok && llm.data?.reply) {
-        briefAnswer = llm.data.reply.trim();
-      }
+    // Abre el agente y envía la consulta automáticamente (Ctrl+V + Enter)
+    if (api?.launch_and_paste) {
+      await api.launch_and_paste(launchTarget, promptText, prettyAgent);
+    } else {
+      await api?.launch(launchTarget);
     }
 
-    setPendingConfirm({
-      kind: "launch",
-      target: launchTarget,
-      label: prettyAgent,
-      promptText,
-      at: Date.now(),
-    });
-    const reply = briefAnswer
-      ? `Ya busqué lo que pediste y lo dejé listo en ${prettyAgent}: ${briefAnswer} ¿Quieres que te lo abra para que veas tú mismo la información?`
-      : `Ya te preparé "${promptText}" en ${prettyAgent} y lo copié al portapapeles. ¿Quieres que te abra ${prettyAgent} para que lo veas tú mismo?`;
+    const reply = `¡De una! Abriendo ${prettyAgent} y buscando "${promptText}".`;
     pushContextTurn("assistant", reply, "open_app", prettyAgent);
     return { ok: true, reply };
   }
