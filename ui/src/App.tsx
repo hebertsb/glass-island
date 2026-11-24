@@ -35,7 +35,9 @@ import {
 } from "lucide-react";
 import RobotFace from "./components/RobotFace";
 import LiquidGlass from "./engine/LiquidGlass";
-import musicSunsetArt from "./assets/music-sunset.png";
+import musicSunsetArt from "./assets/music-cover.png";
+import focusCoverArt from "./assets/focus-cover.png";
+import laptopCoverArt from "./assets/laptop-cover.png";
 import { extractBrandColorFromIcon } from "./utils/extractColor";
 import {
   executeNovaTool,
@@ -144,11 +146,11 @@ function PlatformBadge({ source, platform }: { source: string; platform?: string
   );
 }
 
-function MediaLandscapeArt() {
+function TileCoverBg({ src, scrim = "bottom" }: { src: string; scrim?: "bottom" | "soft" }) {
   return (
     <div className="media-art-bg" aria-hidden="true">
       <img
-        src={musicSunsetArt}
+        src={src}
         alt=""
         style={{
           width: "100%",
@@ -163,11 +165,17 @@ function MediaLandscapeArt() {
           position: "absolute",
           inset: 0,
           background:
-            "linear-gradient(180deg, rgba(15,23,42,0.18) 0%, rgba(15,23,42,0.28) 50%, rgba(9,13,24,0.82) 100%)",
+            scrim === "bottom"
+              ? "linear-gradient(180deg, rgba(9,13,24,0.22) 0%, rgba(9,13,24,0.28) 45%, rgba(9,13,24,0.86) 100%)"
+              : "linear-gradient(180deg, rgba(9,13,24,0.34) 0%, rgba(9,13,24,0.25) 50%, rgba(9,13,24,0.82) 100%)",
         }}
       />
     </div>
   );
+}
+
+function MediaLandscapeArt() {
+  return <TileCoverBg src={musicSunsetArt} scrim="bottom" />;
 }
 
 const MODULE_META: Record<
@@ -1659,8 +1667,9 @@ export default function App() {
                           {...dragHandlers}
                           onClick={safeClick(() => setActiveTab("focus"))}
                         >
+                          <TileCoverBg src={focusCoverArt} scrim="bottom" />
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                            <span className="tile-kicker">FOCUS</span>
+                            <span className="tile-kicker" style={{ textShadow: "0 1px 6px rgba(0,0,0,0.65)" }}>FOCUS</span>
                             <button
                               type="button"
                               className="play-fab"
@@ -1675,10 +1684,10 @@ export default function App() {
                             </button>
                           </div>
                           <div>
-                            <div className="tile-big" style={{ fontSize: 21 }}>
+                            <div className="tile-big" style={{ fontSize: 21, textShadow: "0 2px 10px rgba(0,0,0,0.65)" }}>
                               {focusMin}:{focusSec}
                             </div>
-                            <div className="tile-sub">
+                            <div className="tile-sub" style={{ textShadow: "0 1px 6px rgba(0,0,0,0.75)" }}>
                               {focusRunning ? `Fin ${doneAt}` : "Listo"}
                             </div>
                           </div>
@@ -1754,24 +1763,87 @@ export default function App() {
                         {...dragHandlers}
                         onClick={safeClick(() => setActiveTab("system"))}
                       >
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <span className="tile-kicker">LAPTOP</span>
-                          <span
-                            style={{
-                              fontFamily: "var(--font-mono)",
-                              fontSize: 10,
-                              padding: "1px 5px",
-                              borderRadius: 99,
-                              border: "1.5px solid rgba(255,255,255,0.45)",
-                            }}
-                          >
-                            {telemetry.battery_percent}%
+                        <TileCoverBg src={laptopCoverArt} scrim="bottom" />
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 4 }}>
+                          <span className="tile-kicker" style={{ textShadow: "0 1px 6px rgba(0,0,0,0.7)" }}>LAPTOP</span>
+                          <span className="hud-battery-pill" title={telemetry.battery_plugged ? "Cargando" : "Con batería"}>
+                            <span>{telemetry.battery_percent}%</span>
+                            <span className="hud-bat-icon">
+                              <span
+                                className="hud-bat-fill"
+                                style={{
+                                  width: `${Math.max(15, telemetry.battery_percent)}%`,
+                                  background: telemetry.battery_percent <= 20 ? "#f87171" : "#4ade80",
+                                }}
+                              />
+                              {telemetry.battery_plugged && <span className="hud-bat-bolt">⚡</span>}
+                            </span>
                           </span>
                         </div>
-                        <div>
-                          <div className="tile-big" style={{ fontSize: 22 }}>{telemetry.cpu_percent}%</div>
-                          <div className="tile-sub">
-                            RAM {telemetry.ram_percent}% · C:{telemetry.disk_c_free_gb}G
+
+                        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 6 }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div className="tile-big" style={{ fontSize: 22, textShadow: "0 2px 10px rgba(0,0,0,0.75)" }}>
+                              {telemetry.cpu_percent}%
+                            </div>
+                            <div className="tile-sub" style={{ fontSize: 10.5, textShadow: "0 1px 6px rgba(0,0,0,0.85)" }}>
+                              RAM {telemetry.ram_percent}% · C:{telemetry.disk_c_free_gb}G
+                            </div>
+                          </div>
+
+                          {/* HUD tecnológico clicable (CPU, RAM, Disco C:, Panel Sistema) */}
+                          <div className="laptop-hud-dock" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              className="hud-mini-btn"
+                              onClick={() => handleLaunch("taskmgr.exe")}
+                              title={`CPU ${telemetry.cpu_percent}% · Clic para abrir Administrador de Tareas`}
+                            >
+                              <Cpu size={12} />
+                              <span className="hud-mini-bar">
+                                <span style={{ width: `${Math.min(100, Math.max(18, telemetry.cpu_percent))}%` }} />
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              className="hud-mini-btn"
+                              onClick={() => handleLaunch("resmon.exe")}
+                              title={`RAM ${telemetry.ram_percent}% (${telemetry.ram_used_gb}/${telemetry.ram_total_gb} GB) · Clic para Monitor de Recursos`}
+                            >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <rect x="3" y="7" width="18" height="10" rx="2" />
+                                <path d="M7 11v2M11 11v2M15 11v2M17 17v3M7 17v3M12 17v3" />
+                              </svg>
+                              <span className="hud-mini-bar">
+                                <span style={{ width: `${Math.min(100, Math.max(18, telemetry.ram_percent))}%` }} />
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              className="hud-mini-btn"
+                              onClick={() => handleLaunch("C:\\")}
+                              title={`Disco C: ${telemetry.disk_c_free_gb} GB libres · Clic para abrir Disco C:`}
+                            >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <rect x="4" y="3" width="16" height="18" rx="2" />
+                                <circle cx="12" cy="10" r="3" />
+                                <path d="M8 17h8" />
+                              </svg>
+                              <span className="hud-mini-bar">
+                                <span style={{ width: `${Math.min(100, Math.max(18, telemetry.disk_c_percent))}%` }} />
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              className="hud-mini-btn"
+                              onClick={() => setActiveTab("system")}
+                              title={`Brillo ${brightness}% y estado completo · Clic para abrir panel Laptop`}
+                            >
+                              <Sun size={12} />
+                              <span className="hud-mini-bar">
+                                <span style={{ width: `${Math.min(100, Math.max(15, brightness))}%` }} />
+                              </span>
+                            </button>
                           </div>
                         </div>
                       </div>
