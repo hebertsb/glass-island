@@ -188,6 +188,8 @@ export interface SubuContext {
   setQuickPrompt?: (text: string) => void;
   setAgentAnswer?: (ans: { agent: string; question: string; answer: string } | null) => void;
   scheduleReminder?: (delayMs: number, message: string) => void;
+  codingMusic?: string;
+  setCodingMusic?: (song: string) => void;
   aiBrainEnabled?: boolean;
   geminiApiKey?: string;
   ollamaModel?: string;
@@ -426,6 +428,17 @@ export async function executeSubuCommand(
       const chosen = activeFolders[pickIdx];
       setPendingFolders([]);
       const res = await api?.open_path_in_code(chosen.path);
+      if (chosen.mode === "project_mode") {
+        const song = ctx.codingMusic?.trim() || "Avicii Levels";
+        ctx.setBrightness(75);
+        await api?.set_brightness(75);
+        ctx.startFocus(25);
+        await api?.play_media_query(song, "youtube");
+        ctx.setActiveTab?.("focus");
+        const reply = `¡De una! Abriendo ${chosen.name} en Visual Studio Code, poniendo ${song}, brillo al 75% y Focus de 25 minutos.`;
+        pushContextTurn("assistant", reply, "open_app", chosen.name);
+        return { ok: true, reply };
+      }
       const reply = `¡De una! Abriendo ${chosen.name} en ${res?.openedWith || "Visual Studio Code"}.`;
       pushContextTurn("assistant", reply, "open_app", "Visual Studio Code");
       return { ok: true, reply };
@@ -629,14 +642,47 @@ export async function executeSubuCommand(
   }
 
   // 0f. Tools diarios del sistema (modos/rutinas, portapapeles inteligente, recordatorios, git/terminal, captura, energía)
-  // 1) Modos / Rutinas en 1 orden
+  // 0) Cambiar la música favorita para Modo Programación / Proyecto
+  const setMusicPref = q.match(
+    /^(?:cambia|pon|guarda|configura)\s+(?:mi\s+)?musica\s+de\s+(?:programacion|proyecto|trabajo|codigo)\s+(?:a|por)\s+(.+)$/,
+  );
+  if (setMusicPref) {
+    const newSong = setMusicPref[1].trim();
+    ctx.setCodingMusic?.(newSong);
+    return { ok: true, reply: `¡Listo! Guardé "${newSong}" como tu música para programar.` };
+  }
+
+  // 1) MODO PROYECTO interactivo: pregunta qué proyecto continuar y al elegir abre VS Code + música + brillo + Focus
+  if (q.includes("modo proyecto") || q.includes("continuar proyecto") || q.includes("seguir con mi proyecto")) {
+    const recents = (await api?.list_recent_projects().catch(() => [])) || [];
+    const choices: FolderChoice[] = recents.map((r) => ({
+      name: r.name,
+      path: r.path,
+      parent: r.parent,
+      mode: "project_mode",
+    }));
+    if (choices.length > 0) {
+      setPendingFolders(choices);
+      const spoken = choices
+        .slice(0, 4)
+        .map((c, i) => `${i + 1}, ${c.name}`)
+        .join("; ");
+      const reply = `¿Qué proyecto quieres continuar hoy? Tus recientes son: ${spoken}. Haz clic en uno o dime su nombre.`;
+      pushContextTurn("assistant", reply, "open_project");
+      return { ok: true, reply, folderChoices: choices, keepOpen: true };
+    }
+  }
+
+  // 1b) Modos / Rutinas en 1 orden (con canción personalizable: "modo programación con Avicii Levels")
   if (q.includes("modo programacion") || q.includes("modo programar") || q.includes("modo codigo")) {
+    const customSongM = q.match(/\bcon\s+(.+)$/);
+    const song = (customSongM?.[1] || ctx.codingMusic || "Avicii Levels").trim();
     ctx.setBrightness(75);
     await api?.set_brightness(75);
     ctx.startFocus(25);
     ctx.setActiveTab?.("focus");
-    await api?.play_media_query("lofi hip hop beats to code", "youtube");
-    const reply = "Activando modo programación: música lofi, brillo al 75% y Focus de 25 minutos.";
+    await api?.play_media_query(song, "youtube");
+    const reply = `Activando modo programación: poniendo ${song}, brillo al 75% y Focus de 25 minutos.`;
     pushContextTurn("assistant", reply, "focus");
     return { ok: true, reply };
   }

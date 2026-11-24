@@ -943,6 +943,47 @@ app.whenReady().then(() => {
     return launchFolderInCode(fp);
   });
 
+  // Lista los proyectos más recientes del usuario (ordenados por última modificación) para "Modo Proyecto"
+  ipcMain.handle("island:list-recent-projects", async () => {
+    const roots = [
+      "D:\\UNIVERSIDAD\\proyectos_Personales",
+      path.join(os.homedir(), "Desktop"),
+      "D:\\UNIVERSIDAD",
+    ].filter((d) => fs.existsSync(d));
+    const skip = new Set(["node_modules", ".git", ".venv", "dist", "build", "__macosx", ".vscode"]);
+    const seen = new Set();
+    const list = [];
+    for (const root of roots) {
+      let entries = [];
+      try {
+        entries = fs.readdirSync(root, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const e of entries) {
+        if (!e.isDirectory() || skip.has(e.name.toLowerCase())) continue;
+        const full = path.join(root, e.name);
+        const low = full.toLowerCase();
+        if (seen.has(low)) continue;
+        seen.add(low);
+        let mtime = 0;
+        try {
+          mtime = fs.statSync(full).mtimeMs;
+        } catch {
+          mtime = 0;
+        }
+        list.push({
+          name: e.name,
+          path: full,
+          parent: path.basename(root),
+          mtime,
+        });
+      }
+    }
+    list.sort((a, b) => b.mtime - a.mtime);
+    return list.slice(0, 6);
+  });
+
   ipcMain.handle("island:open-project-terminal", async (_e, query) => {
     const list = await ipcMain._events?.["island:find-projects"] ? [] : [];
     void list;

@@ -965,6 +965,8 @@ export default function App() {
           );
         }, delayMs);
       },
+      codingMusic: config.codingMusic || "Avicii Levels",
+      setCodingMusic: (song) => setConfig((p) => ({ ...p, codingMusic: song })),
       aiBrainEnabled: config.aiBrainEnabled !== false,
       geminiApiKey: config.geminiApiKey || "",
       ollamaModel: config.ollamaModel || "llama3.2",
@@ -1091,6 +1093,8 @@ export default function App() {
           );
         }, delayMs);
       },
+      codingMusic: config.codingMusic || "Avicii Levels",
+      setCodingMusic: (song) => setConfig((p) => ({ ...p, codingMusic: song })),
       aiBrainEnabled: config.aiBrainEnabled !== false,
       geminiApiKey: config.geminiApiKey || "",
       ollamaModel: config.ollamaModel || "llama3.2",
@@ -1561,7 +1565,18 @@ export default function App() {
                             setFolderChoices([]);
                             setPendingFolders([]);
                             const res = await getBridge()?.open_path_in_code(fc.path);
-                            const msg = `¡De una! Abriendo ${fc.name} en ${res?.openedWith || "Visual Studio Code"}.`;
+                            let msg = `¡De una! Abriendo ${fc.name} en ${res?.openedWith || "Visual Studio Code"}.`;
+                            if (fc.mode === "project_mode") {
+                              const song = config.codingMusic?.trim() || "Avicii Levels";
+                              setBrightness(75);
+                              await getBridge()?.set_brightness(75).catch(() => {});
+                              setConfig((p) => ({ ...p, focusMinutes: 25 }));
+                              setFocusSecondsLeft(25 * 60);
+                              setFocusRunning(true);
+                              await getBridge()?.play_media_query(song, "youtube").catch(() => {});
+                              setActiveTab("focus");
+                              msg = `¡De una! Abriendo ${fc.name} en VS Code, poniendo ${song}, brillo al 75% y Focus 25 min.`;
+                            }
                             setSubuReply(msg);
                             setSubuInput("");
                             void speakAsSubu(
@@ -2864,13 +2879,23 @@ export default function App() {
                         />
                         <input
                           className="glass-input"
-                          style={{ width: 120, padding: "5px 8px", fontSize: 11 }}
-                          value={config.ollamaModel ?? "llama3.2"}
+                          style={{ width: 96, padding: "5px 7px", fontSize: 11 }}
+                          value={config.ollamaModel ?? "qwen2.5:7b"}
                           onChange={(e) =>
                             setConfig((p) => ({ ...p, ollamaModel: e.target.value }))
                           }
-                          placeholder="Ollama local"
+                          placeholder="Ollama"
                           title="Modelo local Ollama (127.0.0.1:11434)"
+                        />
+                        <input
+                          className="glass-input"
+                          style={{ width: 120, padding: "5px 7px", fontSize: 11 }}
+                          value={config.codingMusic ?? "Avicii Levels"}
+                          onChange={(e) =>
+                            setConfig((p) => ({ ...p, codingMusic: e.target.value }))
+                          }
+                          placeholder="Música proyecto"
+                          title="Canción o género para Modo Programación / Modo Proyecto"
                         />
                       </div>
                     </div>

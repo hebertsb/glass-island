@@ -30,6 +30,8 @@ export interface FolderChoice {
   name: string;
   path: string;
   parent: string;
+  /** Si es "project_mode", al elegir la carpeta también lanza música + brillo + Focus */
+  mode?: "code_only" | "project_mode";
 }
 
 export interface ContextWindowState {

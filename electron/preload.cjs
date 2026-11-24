@@ -33,6 +33,7 @@ const api = {
   nova_llm_route: (payload) => ipcRenderer.invoke("island:nova-llm-route", payload),
   open_project: (query) => ipcRenderer.invoke("island:open-project", query),
   find_projects: (query) => ipcRenderer.invoke("island:find-projects", query),
+  list_recent_projects: () => ipcRenderer.invoke("island:list-recent-projects"),
   open_path_in_code: (folderPath) => ipcRenderer.invoke("island:open-path-in-code", folderPath),
   open_project_terminal: (query) => ipcRenderer.invoke("island:open-project-terminal", query),
   project_git_status: (query) => ipcRenderer.invoke("island:project-git-status", query),
