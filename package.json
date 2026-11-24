@@ -1,0 +1,12 @@
+{
+  "name": "glass-island",
+  "version": "1.0.0",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "build:ui": "npm --prefix ui run build"
+  },
+  "devDependencies": {
+    "electron": "^35.0.0"
+  }
+}

@@ -1,0 +1,11 @@
+node_modules/
+ui/node_modules/
+ui/dist/
+.venv/
+__pycache__/
+*.pyc
+*.log
+.env
+config.json
+nova_kb.json
+dist/

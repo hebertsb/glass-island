@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/types.ts","./src/vite-env.d.ts","./src/components/robotface.tsx","./src/engine/liquidglass.tsx","./src/utils/extractcolor.ts","./src/utils/novadecisiontree.ts","./src/utils/subucommands.ts"],"version":"5.7.3"}

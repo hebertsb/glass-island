@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GlassIsland + N.O.V.A. — Demo Interactiva</title>
+    <style>
+      :root {
+        --bg: #070b14;
+        --glass: rgba(15, 23, 42, 0.72);
+        --border: rgba(255, 255, 255, 0.16);
+        --accent: #38bdf8;
+        --emerald: #34d399;
+        --text: #f8fafc;
+        --muted: rgba(248, 250, 252, 0.7);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at 20% 18%, rgba(56, 189, 248, 0.22), transparent 42%),
+          radial-gradient(circle at 82% 24%, rgba(139, 92, 246, 0.22), transparent 44%),
+          radial-gradient(circle at 50% 90%, rgba(16, 185, 129, 0.16), transparent 45%),
+          var(--bg);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 28px 16px 60px;
+      }
+
+      /* ===== ISLA DINÁMICA INTERACTIVA ===== */
+      .island-wrap {
+        position: sticky;
+        top: 14px;
+        z-index: 20;
+        display: flex;
+        justify-content: center;
+        width: 100%;
+      }
+      .island {
+        width: 136px;
+        height: 30px;
+        border-radius: 20px;
+        background: linear-gradient(155deg, rgba(17, 24, 39, 0.92), rgba(15, 23, 42, 0.84));
+        border: 1px solid var(--border);
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        backdrop-filter: blur(22px);
+        overflow: hidden;
+        transition: all 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+      }
+      .island.expanded {
+        width: min(700px, 95vw);
+        height: auto;
+        min-height: 276px;
+        border-radius: 26px;
+        cursor: default;
+      }
+      .island.aero {
+        background: linear-gradient(180deg, rgba(186, 230, 253, 0.42) 0%, rgba(14, 165, 233, 0.34) 48%, rgba(16, 185, 129, 0.32) 100%);
+        border-color: rgba(255, 255, 255, 0.55);
+        box-shadow: 0 20px 55px rgba(14, 165, 233, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.75);
+      }
+
+      .collapsed-face {
+        height: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .island.expanded .collapsed-face { display: none; }
+      .eyes {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .eye {
+        width: 7px;
+        height: 7px;
+        border-radius: 99px;
+        background: #f8fafc;
+        box-shadow: 0 0 10px rgba(56, 189, 248, 0.8);
+        transition: all 0.25s ease;
+      }
+      .island.happy .eye {
+        height: 4px;
+        border-radius: 8px 8px 0 0;
+        background: #6ee7b7;
+      }
+
+      .expanded-ui {
+        display: none;
+        flex-direction: column;
+        gap: 10px;
+        padding: 12px 14px;
+      }
+      .island.expanded .expanded-ui { display: flex; }
+
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 11.5px;
+        color: rgba(255, 255, 255, 0.85);
+      }
+      .chip {
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        background: rgba(255, 255, 255, 0.08);
+        color: #fff;
+        border-radius: 99px;
+        padding: 4px 10px;
+        font-size: 11px;
+        cursor: pointer;
+        transition: all 0.16s ease;
+      }
+      .chip:hover { background: rgba(255, 255, 255, 0.18); }
+      .chip.active {
+        background: rgba(56, 189, 248, 0.28);
+        border-color: rgba(56, 189, 248, 0.65);
+      }
+
+      .nova-box {
+        background: rgba(15, 23, 42, 0.68);
+        border: 1px solid rgba(56, 189, 248, 0.35);
+        border-radius: 14px;
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 7px;
+      }
+      .nova-form { display: flex; gap: 6px; }
+      .nova-input {
+        flex: 1;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        background: rgba(255, 255, 255, 0.06);
+        color: #fff;
+        border-radius: 10px;
+        padding: 7px 10px;
+        font-size: 12px;
+        outline: none;
+      }
+      .nova-input:focus { border-color: var(--accent); }
+      .btn-white {
+        background: #fff;
+        color: #0f172a;
+        border: none;
+        border-radius: 10px;
+        padding: 0 14px;
+        font-weight: 700;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .reply-line {
+        font-size: 12px;
+        color: #7dd3fc;
+        min-height: 18px;
+      }
+
+      .bento {
+        display: grid;
+        grid-template-columns: 1fr 1.55fr 1fr;
+        border-radius: 16px;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        min-height: 124px;
+      }
+      .tile {
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        border-right: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      .tile:last-child { border-right: none; }
+      .tile-focus { background: linear-gradient(155deg, rgba(109, 40, 217, 0.78), rgba(30, 27, 75, 0.92)); }
+      .tile-music { background: linear-gradient(135deg, #ec4899 0%, #6366f1 52%, #0ea5e9 100%); }
+      .tile-laptop { background: linear-gradient(155deg, rgba(194, 88, 22, 0.78), rgba(58, 22, 10, 0.92)); }
+      .kicker { font-size: 10px; letter-spacing: 0.08em; opacity: 0.85; text-transform: uppercase; }
+      .big { font-size: 22px; font-weight: 800; }
+
+      /* ===== SECCIÓN HERO + VISUALIZADOR MAESTRO -> ALUMNO ===== */
+      .hero {
+        max-width: 780px;
+        text-align: center;
+        margin-top: 34px;
+      }
+      .hero h1 {
+        font-size: clamp(26px, 4vw, 40px);
+        margin: 0 0 10px;
+        background: linear-gradient(90deg, #fff, #7dd3fc, #6ee7b7);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+      }
+      .hero p { color: var(--muted); font-size: 15px; line-height: 1.6; margin: 0 0 22px; }
+
+      .pipeline {
+        max-width: 780px;
+        width: 100%;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+        gap: 10px;
+        margin-top: 14px;
+      }
+      .stage-card {
+        background: rgba(15, 23, 42, 0.65);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 14px;
+        padding: 13px;
+        transition: all 0.25s ease;
+      }
+      .stage-card.lit {
+        border-color: #38bdf8;
+        box-shadow: 0 0 24px rgba(56, 189, 248, 0.35);
+        transform: translateY(-2px);
+      }
+      .stage-card h3 { margin: 0 0 5px; font-size: 13px; }
+      .stage-card p { margin: 0; font-size: 11.5px; color: var(--muted); line-height: 1.45; }
+      .badge {
+        display: inline-block;
+        font-size: 10px;
+        padding: 2px 7px;
+        border-radius: 99px;
+        background: rgba(52, 211, 153, 0.18);
+        color: #6ee7b7;
+        margin-bottom: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="island-wrap">
+      <div id="island" class="island expanded">
+        <div class="collapsed-face" onclick="toggleIsland(true)">
+          <span class="eyes"><span class="eye"></span><span class="eye"></span></span>
+          <span>Clic para abrir GlassIsland</span>
+        </div>
+
+        <div class="expanded-ui">
+          <div class="header">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span class="eyes"><span class="eye"></span><span class="eye"></span></span>
+              <strong>LUN, 23 NOV / 28° · Santa Cruz</strong>
+            </div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <button class="chip active" id="btn-aero" onclick="toggleAero()">💧 Frutiger Aero</button>
+              <button class="chip" onclick="toggleIsland(false)">✕ Ocultar</button>
+            </div>
+          </div>
+
+          <div class="nova-box">
+            <form class="nova-form" onsubmit="handleOrder(event)">
+              <input id="cmd-input" class="nova-input" placeholder='Prueba escribir o tocar un chip: "poneme Firestone", "qué temperatura hará mañana"...' />
+              <button class="btn-white" type="submit">Ir</button>
+            </form>
+            <div style="display:flex;gap:5px;flex-wrap:wrap;">
+              <button class="chip" onclick="runDemo('Oye Nova, cambia la canción por La Macarena')">🎵 cambia por La Macarena</button>
+              <button class="chip" onclick="runDemo('Oye Nova, qué temperatura hará mañana')">🌤️ clima de mañana</button>
+              <button class="chip" onclick="runDemo('Oye Nova, qué tareas tengo para hoy')">📝 mis tareas</button>
+              <button class="chip" onclick="runDemo('Oye Nova, poneme Firestone y baja el brillo al 60')">🧠 orden compleja (IA GPU)</button>
+            </div>
+            <div id="nova-reply" class="reply-line">
+              <strong>Nova:</strong> ¡Hola! Toca cualquier ejemplo arriba para ver en vivo el flujo <em>Alumno (CPU) → Maestro (RTX 5050)</em>.
+            </div>
+          </div>
+
+          <div class="bento">
+            <div class="tile tile-focus">
+              <span class="kicker">FOCUS</span>
+              <div>
+                <div class="big" id="focus-val">25:00</div>
+                <div style="font-size:11px;opacity:.8;" id="focus-sub">Listo</div>
+              </div>
+            </div>
+            <div class="tile tile-music">
+              <span class="kicker">YOUTUBE APP</span>
+              <div>
+                <div style="font-weight:800;font-size:15px;" id="song-title">Firestone</div>
+                <div style="font-size:11px;opacity:.9;" id="song-artist">Kygo ft. Conrad Sewell</div>
+              </div>
+            </div>
+            <div class="tile tile-laptop">
+              <span class="kicker">LAPTOP · RTX 5050</span>
+              <div>
+                <div class="big" id="gpu-val">0% GPU</div>
+                <div style="font-size:11px;opacity:.85;" id="kb-val">🧠 21 patrones CPU</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <section class="hero">
+      <h1>GlassIsland + N.O.V.A.</h1>
+      <p>
+        Demo interactiva del proyecto de escritorio para Windows desarrollado por <strong>Hebert Suárez Burgos</strong>.
+        Combina <strong>Liquid Glass</strong>, <strong>Frutiger Aero</strong>, apps reales de Windows y un asistente de voz con arquitectura
+        <strong>Maestro → Alumno</strong> que mantiene tu GPU al 0% en reposo.
+      </p>
+    </section>
+
+    <section class="pipeline" aria-label="Flujo de procesamiento de Nova">
+      <div class="stage-card" id="st-vad">
+        <span class="badge">0% GPU · CPU</span>
+        <h3>1. Escucha VAD + Contexto</h3>
+        <p>Micrófono continuo en español boliviano con ventana de contexto de los últimos 8 turnos.</p>
+      </div>
+      <div class="stage-card" id="st-tree">
+        <span class="badge">&lt; 2 ms · 0% GPU</span>
+        <h3>2. Alumno (Árbol + KB)</h3>
+        <p>Sistema Experto cruceño + Árbol de Decisiones entrenado con <code>nova_kb.json</code>.</p>
+      </div>
+      <div class="stage-card" id="st-llm">
+        <span class="badge">RTX 5050 · 90s</span>
+        <h3>3. Maestro (Qwen2.5-7B)</h3>
+        <p>Solo se despierta en frases complejas/múltiples y libera VRAM automáticamente a los 90s.</p>
+      </div>
+      <div class="stage-card" id="st-learn">
+        <span class="badge">Auto-mejora</span>
+        <h3>4. Tools + Aprendizaje</h3>
+        <p>Ejecuta en Windows, responde con voz neural <code>es-BO</code> y guarda el patrón aprendido.</p>
+      </div>
+    </section>
+
+    <script>
+      let kbCount = 21;
+      const island = document.getElementById("island");
+      const replyEl = document.getElementById("nova-reply");
+      const songTitle = document.getElementById("song-title");
+      const songArtist = document.getElementById("song-artist");
+      const gpuVal = document.getElementById("gpu-val");
+      const kbVal = document.getElementById("kb-val");
+
+      function toggleIsland(open) {
+        island.classList.toggle("expanded", open);
+      }
+      function toggleAero() {
+        island.classList.toggle("aero");
+      }
+      function lightStages(ids) {
+        ["st-vad", "st-tree", "st-llm", "st-learn"].forEach((id) =>
+          document.getElementById(id).classList.toggle("lit", ids.includes(id))
+        );
+      }
+
+      function handleOrder(e) {
+        e.preventDefault();
+        const inp = document.getElementById("cmd-input");
+        if (!inp.value.trim()) return;
+        runDemo(inp.value.trim());
+        inp.value = "";
+      }
+
+      function runDemo(text) {
+        const q = text.toLowerCase();
+        island.classList.add("happy");
+        setTimeout(() => island.classList.remove("happy"), 1200);
+
+        if (q.includes("macarena")) {
+          lightStages(["st-vad", "st-tree", "st-learn"]);
+          gpuVal.textContent = "0% GPU";
+          songTitle.textContent = "La Macarena";
+          songArtist.textContent = "Los Del Río (YouTube App)";
+          replyEl.innerHTML =
+            "<strong>Nova (Alumno CPU · 1.4 ms):</strong> Entendido, cambiando la canción por La Macarena en tu app de YouTube.";
+        } else if (q.includes("mañana") || q.includes("temperatura") || q.includes("clima")) {
+          lightStages(["st-vad", "st-tree", "st-learn"]);
+          gpuVal.textContent = "0% GPU";
+          replyEl.innerHTML =
+            "<strong>Nova (Alumno CPU · 1.8 ms):</strong> Para mañana en Santa Cruz de la Sierra tendremos máxima de 32° y mínima de 24°, parcialmente nublado.";
+        } else if (q.includes("tareas")) {
+          lightStages(["st-vad", "st-tree", "st-learn"]);
+          gpuVal.textContent = "0% GPU";
+          replyEl.innerHTML =
+            "<strong>Nova (Alumno CPU · 1.1 ms):</strong> Tienes 2 tareas pendientes para hoy: 1, Revisar pendientes; 2, Subir GlassIsland a GitHub.";
+        } else {
+          lightStages(["st-vad", "st-tree", "st-llm", "st-learn"]);
+          gpuVal.textContent = "RTX 5050 · 0.8s";
+          kbCount += 1;
+          kbVal.textContent = `🧠 ${kbCount} patrones CPU`;
+          songTitle.textContent = "Firestone";
+          songArtist.textContent = "Kygo · Brillo 60%";
+          replyEl.innerHTML =
+            "<strong>Nova (Maestro Qwen2.5-7B → Aprendido en KB):</strong> Entendido Hebert, reproduciendo Firestone y ajustando el brillo al 60%. Patrón guardado para CPU.";
+          setTimeout(() => (gpuVal.textContent = "0% GPU (90s)"), 2600);
+        }
+      }
+    </script>
+  </body>
+</html>
