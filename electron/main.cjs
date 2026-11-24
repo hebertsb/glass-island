@@ -724,7 +724,16 @@ app.whenReady().then(() => {
       `- play_music (arg: nombre canción/artista, platform: youtube|youtube music|spotify)\n` +
       `- open_app (arg: nombre de la app)\n` +
       `- close_app (arg: nombre de la app)\n` +
-      `- open_project (arg: nombre del proyecto)\n` +
+      `- open_project (arg: nombre del proyecto existente)\n` +
+      `- create_project (arg: nombre de la carpeta/proyecto nuevo a crear y abrir en VS Code; si el usuario menciona "escritorio", "universidad" o "documentos", ponlo en platform, si no deja "proyectos_personales")\n` +
+      `- modo_programacion (activar entorno de programación: VS Code + música + brillo + Focus; úsalo también si dice "vamos a codear", "empecemos a programar", "modo dev", "modo programador")\n` +
+      `- modo_proyecto (listar proyectos recientes para elegir cuál continuar)\n` +
+      `- modo_semana (organizar la semana: Google Calendar + tareas)\n` +
+      `- modo_casa (modo noche/casa: brillo 40%, tema oscuro, luces y música lo-fi)\n` +
+      `- modo_universidad (abrir carpeta Universidad y leer tareas)\n` +
+      `- modo_descanso (pausar Focus, brillo 60% y música chill)\n` +
+      `- briefing (resumen del día: hora, clima, tareas y espacio libre en DiscoClaro)\n` +
+      `- smart_home (arg: lights_on|lights_off)\n` +
       `- control_media (arg: play_pause|next|prev|vol_up|vol_down|vol_mute)\n` +
       `- set_brightness (level: 10..100)\n` +
       `- start_focus (level: minutos 5..60)\n` +
@@ -958,6 +967,51 @@ app.whenReady().then(() => {
     const fp = String(folderPath || "").trim();
     if (!fp || !fs.existsSync(fp)) return { ok: false, error: "not_found" };
     return launchFolderInCode(fp);
+  });
+
+  // Crea una carpeta de proyecto nuevo (por defecto en proyectos_Personales) y la abre directo en VS Code
+  ipcMain.handle("island:create-project", async (_e, rawName, locationHint, openInCode = true) => {
+    const cleanName = String(rawName || "")
+      .replace(/[<>:"/\\|?*]+/g, "")
+      .replace(/\s+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 64);
+    if (!cleanName) return { ok: false, error: "invalid_name" };
+
+    const loc = String(locationHint || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+    let baseDir = "D:\\UNIVERSIDAD\\proyectos_Personales";
+    if (loc.includes("escritorio") || loc.includes("desktop")) {
+      baseDir = path.join(os.homedir(), "Desktop");
+    } else if (loc.includes("documento") || loc.includes("document")) {
+      baseDir = path.join(os.homedir(), "Documents");
+    } else if ((loc.includes("universidad") || loc.includes("uni")) && !loc.includes("personal")) {
+      baseDir = "D:\\UNIVERSIDAD";
+    }
+    if (!fs.existsSync(baseDir)) {
+      baseDir = path.join(os.homedir(), "Desktop");
+    }
+    const targetPath = path.join(baseDir, cleanName);
+    const existed = fs.existsSync(targetPath);
+    try {
+      fs.mkdirSync(targetPath, { recursive: true });
+      let opened = null;
+      if (openInCode !== false) {
+        opened = launchFolderInCode(targetPath);
+      }
+      return {
+        ok: true,
+        path: targetPath,
+        folderName: cleanName,
+        baseName: path.basename(baseDir),
+        existed,
+        openedWith: opened?.openedWith || "VS Code",
+      };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
   });
 
   // Lista los proyectos más recientes del usuario (ordenados por última modificación) para "Modo Proyecto"

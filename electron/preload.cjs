@@ -35,6 +35,8 @@ const api = {
   find_projects: (query) => ipcRenderer.invoke("island:find-projects", query),
   list_recent_projects: () => ipcRenderer.invoke("island:list-recent-projects"),
   open_path_in_code: (folderPath) => ipcRenderer.invoke("island:open-path-in-code", folderPath),
+  create_project: (name, locationHint, openInCode) =>
+    ipcRenderer.invoke("island:create-project", name, locationHint, openInCode),
   open_project_terminal: (query) => ipcRenderer.invoke("island:open-project-terminal", query),
   project_git_status: (query) => ipcRenderer.invoke("island:project-git-status", query),
   voice_speak: (text, voice, geminiApiKey) =>

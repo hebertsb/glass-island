@@ -133,8 +133,17 @@ export type NovaToolId =
   | "open_app"
   | "close_app"
   | "open_project"
+  | "create_project"
   | "web_search"
-  | "add_todo";
+  | "add_todo"
+  | "modo_programacion"
+  | "modo_proyecto"
+  | "modo_semana"
+  | "modo_casa"
+  | "modo_universidad"
+  | "modo_descanso"
+  | "briefing"
+  | "smart_home";
 
 export interface LearnedPattern {
   phrase: string;
@@ -324,6 +333,11 @@ export interface GlassIslandApi {
   find_projects: (query: string) => Promise<{ name: string; path: string; parent: string; score: number }[]>;
   list_recent_projects: () => Promise<{ name: string; path: string; parent: string; mtime: number }[]>;
   open_path_in_code: (folderPath: string) => Promise<{ ok: boolean; path?: string; folderName?: string; openedWith?: string }>;
+  create_project: (
+    name: string,
+    locationHint?: string,
+    openInCode?: boolean,
+  ) => Promise<{ ok: boolean; path?: string; folderName?: string; baseName?: string; existed?: boolean; error?: string }>;
   open_project_terminal: (query: string) => Promise<{ ok: boolean; folderName?: string; path?: string }>;
   project_git_status: (query: string) => Promise<{ ok: boolean; folderName?: string; branch?: string; changes?: number }>;
   voice_speak: (

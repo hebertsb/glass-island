@@ -165,6 +165,25 @@ export async function executeNovaTool(
       ? { ok: true, reply: `¡Claro! Abriendo tu proyecto ${cleanArg}.` }
       : { ok: false, reply: `No encontré el proyecto ${cleanArg}.` };
   }
+  if (tool === "create_project") {
+    const res = await api?.create_project(cleanArg, "proyectos_personales", true);
+    return res?.ok
+      ? {
+          ok: true,
+          reply: `Listo, Hebert. Creé la carpeta ${res.folderName} en ${res.baseName} y la abrí en Visual Studio Code.`,
+        }
+      : { ok: false, reply: `No pude crear el proyecto ${cleanArg}.` };
+  }
+  if (tool === "modo_programacion") return await executeSubuCommand("modo programacion", ctx);
+  if (tool === "modo_proyecto") return await executeSubuCommand("modo proyecto", ctx);
+  if (tool === "modo_semana") return await executeSubuCommand("modo semana", ctx);
+  if (tool === "modo_casa") return await executeSubuCommand("modo casa", ctx);
+  if (tool === "modo_universidad") return await executeSubuCommand("modo universidad", ctx);
+  if (tool === "modo_descanso") return await executeSubuCommand("modo descanso", ctx);
+  if (tool === "briefing") return await executeSubuCommand("resumen del dia", ctx);
+  if (tool === "smart_home") {
+    return await executeSubuCommand(cleanArg === "lights_off" ? "apaga las luces" : "prende las luces", ctx);
+  }
   // open_app
   return await executeSubuCommand(`abre ${cleanArg}`, ctx);
 }
@@ -661,6 +680,38 @@ export async function executeSubuCommand(
     return { ok: true, reply: `¡Listo! Guardé "${newSong}" como tu música para programar.` };
   }
 
+  // 0d) CREAR PROYECTO / CARPETA NUEVA Y ABRIR EN VS CODE
+  // Ej: "vamos a programar un software nuevo crea la carpeta en proyectos personales con el nombre crm"
+  //     "crea un proyecto nuevo llamado inventario", "nueva carpeta tienda en universidad"
+  if (
+    /(?:crea|crear|creame|haz|hazme|arma|armame|inicia|empecemos|nuevo|nueva)\b.*(?:carpeta|proyecto|software|app|sistema|repositorio)/.test(
+      q,
+    )
+  ) {
+    const nameMatch =
+      q.match(/(?:con el nombre|de nombre|llamado|llamada|que se llame|nombre)\s+([a-z0-9_\-\s]{2,40}?)(?:\s+(?:en|y|con|para)\b|$)/) ||
+      q.match(/(?:carpeta|proyecto|software)\s+(?:nuevo\s+|nueva\s+)?([a-z0-9_\-]{2,32})(?:\s+(?:en|y|con)\b|$)/);
+    if (nameMatch?.[1]) {
+      const projName = nameMatch[1]
+        .replace(/\b(?:en|proyectos?|personales?|escritorio|documentos?|universidad|visual|studio|code|vs|y|abrela|abrelo)\b/g, "")
+        .trim();
+      if (projName.length >= 2) {
+        let locHint = "proyectos_personales";
+        if (q.includes("escritorio") || q.includes("desktop")) locHint = "escritorio";
+        else if (q.includes("documento")) locHint = "documentos";
+        else if (q.includes("universidad") && !q.includes("personal")) locHint = "universidad";
+        const res = await api?.create_project(projName, locHint, true);
+        if (res?.ok) {
+          const reply = res.existed
+            ? `La carpeta ${res.folderName} ya existía en ${res.baseName}, Hebert. Ya te la abrí en Visual Studio Code.`
+            : `Listo, Hebert. Creé la carpeta ${res.folderName} en ${res.baseName} y ya la abrí en Visual Studio Code.`;
+          pushContextTurn("assistant", reply, "create_project", res.folderName);
+          return { ok: true, reply };
+        }
+      }
+    }
+  }
+
   // 1) MODO PROYECTO interactivo: pregunta qué proyecto continuar y al elegir abre VS Code + música + brillo + Focus
   if (q.includes("modo proyecto") || q.includes("continuar proyecto") || q.includes("seguir con mi proyecto")) {
     const recents = (await api?.list_recent_projects().catch(() => [])) || [];
@@ -682,8 +733,17 @@ export async function executeSubuCommand(
     }
   }
 
-  // 1b) Modos / Rutinas en 1 orden (con canción personalizable: "modo programación con Avicii Levels")
-  if (q.includes("modo programacion") || q.includes("modo programar") || q.includes("modo codigo")) {
+  // 1b) Modos / Rutinas en 1 orden (con frases coloquiales: "vamos a codear", "empecemos como modo programador", "modo dev")
+  if (
+    q.includes("modo programacion") ||
+    q.includes("modo programador") ||
+    q.includes("modo programar") ||
+    q.includes("modo codigo") ||
+    q.includes("modo dev") ||
+    /(?:vamos a codear|a codear|pongamonos a programar|hora de programar|empecemos a programar|vamos a programar)$/.test(
+      q,
+    )
+  ) {
     const customSongM = q.match(/\bcon\s+(.+)$/);
     const song = (customSongM?.[1] || ctx.codingMusic || "Avicii Levels").trim();
     ctx.setBrightness(75);
@@ -1398,6 +1458,24 @@ export async function executeSubuCommand(
           await api.close_app(a);
         } else if (t === "open_project" && a) {
           await api.open_project(a);
+        } else if (t === "create_project" && a) {
+          await api.create_project(a, act.platform || "proyectos_personales", true);
+        } else if (t === "modo_programacion") {
+          await executeSubuCommand("modo programacion", ctx);
+        } else if (t === "modo_proyecto") {
+          await executeSubuCommand("modo proyecto", ctx);
+        } else if (t === "modo_semana") {
+          await executeSubuCommand("modo semana", ctx);
+        } else if (t === "modo_casa") {
+          await executeSubuCommand("modo casa", ctx);
+        } else if (t === "modo_universidad") {
+          await executeSubuCommand("modo universidad", ctx);
+        } else if (t === "modo_descanso") {
+          await executeSubuCommand("modo descanso", ctx);
+        } else if (t === "briefing") {
+          await executeSubuCommand("resumen del dia", ctx);
+        } else if (t === "smart_home") {
+          await executeSubuCommand(a === "lights_off" ? "apaga las luces" : "prende las luces", ctx);
         } else if (t === "control_media" && a) {
           await api.media_control(a);
         } else if (t === "set_brightness" && typeof act.level === "number") {
@@ -1415,19 +1493,33 @@ export async function executeSubuCommand(
         }
       }
 
-      // Auto-aprendizaje: si fue 1 sola tool clara, guárdala en nova_kb.json para la próxima vez (<5ms local)
+      // Auto-aprendizaje ampliado: guarda TODAS las tools soportadas en nova_kb.json para aprender tus frases reales (<2ms local)
+      const LEARNABLE_TOOLS = [
+        "play_music",
+        "open_app",
+        "close_app",
+        "open_project",
+        "create_project",
+        "web_search",
+        "add_todo",
+        "modo_programacion",
+        "modo_proyecto",
+        "modo_semana",
+        "modo_casa",
+        "modo_universidad",
+        "modo_descanso",
+        "briefing",
+        "smart_home",
+      ];
       if (
         llm.data.learn !== false &&
         actions.length === 1 &&
-        ["play_music", "open_app", "close_app", "open_project", "web_search", "add_todo"].includes(
-          actions[0].tool,
-        ) &&
-        actions[0].arg
+        LEARNABLE_TOOLS.includes(actions[0].tool)
       ) {
         await teachNovaPattern(
           q,
           actions[0].tool as NovaToolId,
-          String(actions[0].arg),
+          String(actions[0].arg || actions[0].tool),
         );
       }
 
