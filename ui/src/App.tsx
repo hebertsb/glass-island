@@ -305,37 +305,39 @@ function getDimensions(
   shape: IslandShape,
   expanded: boolean,
   autoHide: boolean,
+  extraHeight = 0,
 ): { w: number; h: number; margin: number; radius: number; notchTop: boolean } {
   const isNotch = shape === "notch";
   if (!expanded) {
     if (autoHide && (shape === "notch" || shape === "slim")) {
-      // Micro-pestaña elegante pegada al borde superior con ojitos bien visibles
-      return { w: 122, h: 24, margin: 0, radius: 14, notchTop: true };
+      // Pestaña elegante pegada al borde superior con carita bien visible y proporcional
+      return { w: 168, h: 34, margin: 0, radius: 17, notchTop: true };
     }
     switch (shape) {
       case "slim":
-        return { w: 148, h: 26, margin: 4, radius: 13, notchTop: false };
+        return { w: 176, h: 34, margin: 4, radius: 17, notchTop: false };
       case "vertical":
-        return { w: 38, h: 102, margin: 6, radius: 19, notchTop: false };
+        return { w: 44, h: 112, margin: 6, radius: 22, notchTop: false };
       case "card":
-        return { w: 136, h: 48, margin: 12, radius: 16, notchTop: false };
+        return { w: 152, h: 52, margin: 12, radius: 16, notchTop: false };
       case "pill":
-        return { w: 124, h: 28, margin: 6, radius: 14, notchTop: false };
+        return { w: 168, h: 36, margin: 6, radius: 18, notchTop: false };
       default:
-        return { w: 124, h: 26, margin: 0, radius: 14, notchTop: true };
+        return { w: 174, h: 36, margin: 0, radius: 17, notchTop: true };
     }
   }
+  const addH = Math.max(0, Math.min(extraHeight, 210));
   switch (shape) {
     case "vertical":
-      return { w: 336, h: 480, margin: 8, radius: 22, notchTop: false };
+      return { w: 336, h: Math.min(500, 480 + addH), margin: 8, radius: 22, notchTop: false };
     case "card":
-      return { w: 380, h: 320, margin: 12, radius: 20, notchTop: false };
+      return { w: 380, h: Math.min(490, 320 + addH), margin: 12, radius: 20, notchTop: false };
     case "slim":
-      return { w: 600, h: 248, margin: 6, radius: 18, notchTop: false };
+      return { w: 600, h: Math.min(480, 248 + addH), margin: 6, radius: 18, notchTop: false };
     case "pill":
-      return { w: 684, h: 270, margin: 8, radius: 24, notchTop: false };
-    default: // notch expandido (cómodo para 3, 4 o 5 tarjetas)
-      return { w: 684, h: 270, margin: 0, radius: 24, notchTop: isNotch };
+      return { w: 684, h: Math.min(486, 270 + addH), margin: 8, radius: 24, notchTop: false };
+    default: // notch expandido (se alarga automáticamente cuando aparece la barra de voz Nova)
+      return { w: 684, h: Math.min(486, 270 + addH), margin: 0, radius: 24, notchTop: isNotch };
   }
 }
 
@@ -1360,7 +1362,11 @@ export default function App() {
   const doneTodos = config.todos.filter((t) => t.done).length;
   const isCompactLayout = config.shape === "vertical" || config.shape === "card";
 
-  const dims = getDimensions(config.shape, expanded, config.autoHide);
+  const voiceExtraH =
+    expanded && subuOpen
+      ? 98 + (subuReply ? 42 : 0) + (folderChoices.length > 0 || unknownPhrase ? 54 : 0)
+      : 0;
+  const dims = getDimensions(config.shape, expanded, config.autoHide, voiceExtraH);
   const stageClass =
     config.anchor === "bottom-center"
       ? "island-stage island-stage--bottom"
@@ -1392,7 +1398,7 @@ export default function App() {
             <RobotFace
               mood={effectiveMood}
               color={config.robotColor}
-              size="sm"
+              size="md"
               showMouth={config.showMouth}
             />
           </div>

@@ -228,7 +228,7 @@ async function getExtraFresh() {
 
 // --- Ventana transparente Electron con click-through perfecto ---
 const CANVAS_W = 720;
-const CANVAS_H = 380;
+const CANVAS_H = 520;
 
 function createWindow() {
   const { width: sw } = screen.getPrimaryDisplay().bounds;
