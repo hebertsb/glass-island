@@ -2927,7 +2927,32 @@ export default function App() {
                             );
                           }}
                         >
-                          ▶ Probar voz
+                          ▶ Probar
+                        </button>
+                        <button
+                          type="button"
+                          className="icon-chip"
+                          title="Graba 1 clip de referencia de 12s con Gemini Pro TTS para clonar esa voz 100% offline"
+                          onClick={async () => {
+                            setSubuOpen(true);
+                            setSubuReply("Grabando clip de referencia de voz Jarvis desde Gemini...");
+                            const res = await getBridge()
+                              ?.clone_jarvis_ref(
+                                config.voiceName?.startsWith("gemini:")
+                                  ? config.voiceName
+                                  : "gemini:Charon",
+                                config.geminiApiKey || "",
+                              )
+                              .catch(() => null);
+                            if (res?.ok) {
+                              playDoneChime(config.hudSounds !== false);
+                              setSubuReply("✓ Clip jarvis_ref.wav guardado. Ya puedes usar Jarvis Clonado Offline.");
+                            } else {
+                              setSubuReply(res?.error || "No se pudo grabar el clip de referencia.");
+                            }
+                          }}
+                        >
+                          🧬 Clonar
                         </button>
                       </div>
 

@@ -38,6 +38,37 @@ _voice_name = "es-BO-SofiaNeural"
 _use_whisper = False
 _whisper_model = None
 _whisper_loading = False
+_clone_model = None
+
+
+def _synth_clone_wav_b64(text: str, ref_wav: str) -> str:
+    """Clonación Zero-Shot local en GPU NVIDIA usando Chatterbox Multilingual (si está instalado)."""
+    global _clone_model
+    try:
+        import torch  # type: ignore
+        from chatterbox.mtl_tts import ChatterboxMultilingualTTS  # type: ignore
+
+        if _clone_model is None:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            _clone_model = ChatterboxMultilingualTTS.from_pretrained(device=device)
+        wav_tensor = _clone_model.generate(
+            text,
+            language_id="es",
+            audio_prompt_path=ref_wav,
+            exaggeration=0.45,
+            cfg_weight=0.5,
+        )
+        pcm = np.clip(wav_tensor.squeeze().detach().cpu().numpy() * 32767.0, -32768, 32767).astype(np.int16)
+        sr_out = int(getattr(_clone_model, "sr", 24000))
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(sr_out)
+            wf.writeframes(pcm.tobytes())
+        return "data:audio/wav;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+    except Exception:
+        return ""
 
 
 def _ensure_whisper_async() -> None:
@@ -303,6 +334,15 @@ def _stdin_loop() -> None:
                 except Exception:
                     audio_b64 = ""
             emit({"id": req_id, "data": {"audio": audio_b64, "voice": voice}})
+        elif cmd == "speak_clone":
+            text = str(req.get("text", "")).strip()
+            ref_wav = str(req.get("ref_wav", "")).strip()
+            audio_b64 = ""
+            if text and ref_wav:
+                with _state_lock:
+                    _muted_for_tts_until = time.monotonic() + max(2.5, len(text) * 0.08)
+                audio_b64 = _synth_clone_wav_b64(text, ref_wav)
+            emit({"id": req_id, "data": {"audio": audio_b64, "voice": "clone:jarvis"}})
         elif cmd == "quit":
             break
 

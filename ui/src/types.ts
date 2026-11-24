@@ -331,6 +331,10 @@ export interface GlassIslandApi {
     voice?: string,
     geminiApiKey?: string,
   ) => Promise<{ audio?: string; voice?: string; engine?: string }>;
+  clone_jarvis_ref: (
+    geminiVoice?: string,
+    geminiApiKey?: string,
+  ) => Promise<{ ok: boolean; path?: string; voice?: string; error?: string }>;
   get_disk_summary: () => Promise<{
     ok: boolean;
     volumes: { name: string; freeGb: number; totalGb: number; usedPct: number }[];

@@ -1,10 +1,13 @@
 const { app, BrowserWindow, clipboard, dialog, ipcMain, nativeImage, screen, session, shell } = require("electron");
 const { execFile, spawn } = require("child_process");
+const crypto = require("crypto");
 const fs = require("fs");
 const https = require("https");
 const os = require("os");
 const path = require("path");
 const readline = require("readline");
+
+const GEMINI_HTTPS_AGENT = new https.Agent({ keepAlive: true, maxSockets: 4 });
 
 const RESOURCES_BASE = app.isPackaged ? process.resourcesPath : path.join(__dirname, "..");
 const DIST_INDEX = path.join(__dirname, "..", "ui", "dist", "index.html");
@@ -19,6 +22,8 @@ const ICON_PATH = path.join(RESOURCES_BASE, "assets", "glassisland.ico");
 const CONFIG_DIR = path.join(process.env.LOCALAPPDATA || os.homedir(), "GlassIsland");
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
 const KB_FILE = path.join(CONFIG_DIR, "nova_kb.json");
+const VOICE_CACHE_DIR = path.join(CONFIG_DIR, "voice_cache");
+const JARVIS_REF_WAV = path.join(CONFIG_DIR, "jarvis_ref.wav");
 const PS_EXE = path.join(
   process.env.WINDIR || "C:\\Windows",
   "System32",
@@ -1606,7 +1611,7 @@ app.whenReady().then(() => {
     }
   });
 
-  function pcm24kToWavBase64(pcmBuf) {
+  function pcm24kToWavBuffer(pcmBuf) {
     const sampleRate = 24000;
     const numChannels = 1;
     const bitsPerSample = 16;
@@ -1626,13 +1631,13 @@ app.whenReady().then(() => {
     header.writeUInt16LE(bitsPerSample, 34);
     header.write("data", 36);
     header.writeUInt32LE(pcmBuf.length, 40);
-    return "data:audio/wav;base64," + Buffer.concat([header, pcmBuf]).toString("base64");
+    return Buffer.concat([header, pcmBuf]);
   }
 
   function synthesizeGeminiTts(text, geminiVoice, apiKey) {
     return new Promise((resolve) => {
       if (!apiKey || !text) {
-        resolve("");
+        resolve(null);
         return;
       }
       const body = JSON.stringify({
@@ -1640,7 +1645,7 @@ app.whenReady().then(() => {
           {
             parts: [
               {
-                text: `Habla en español latino natural, cálido, seguro y conversacional (como un asistente personal real tipo Jarvis/AVA, sin sonar robótico). Di exactamente esto: ${text}`,
+                text: `[Español latino natural, cálido y seguro] ${text}`,
               },
             ],
           },
@@ -1658,6 +1663,7 @@ app.whenReady().then(() => {
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${encodeURIComponent(apiKey)}`,
         {
           method: "POST",
+          agent: GEMINI_HTTPS_AGENT,
           headers: {
             "Content-Type": "application/json",
             "Content-Length": Buffer.byteLength(body),
@@ -1679,56 +1685,169 @@ app.whenReady().then(() => {
               const b64 = part?.inlineData?.data;
               const mime = String(part?.inlineData?.mimeType || "");
               if (!b64) {
-                resolve("");
+                resolve(null);
                 return;
               }
-              if (mime.includes("wav") || mime.includes("mpeg") || mime.includes("mp3")) {
-                resolve(`data:${mime};base64,${b64}`);
+              if (mime.includes("wav")) {
+                const wavBuf = Buffer.from(b64, "base64");
+                resolve({ dataUrl: `data:audio/wav;base64,${b64}`, wavBuf });
+                return;
+              }
+              if (mime.includes("mpeg") || mime.includes("mp3")) {
+                resolve({ dataUrl: `data:${mime};base64,${b64}`, wavBuf: null });
                 return;
               }
               const pcmBuf = Buffer.from(b64, "base64");
-              resolve(pcm24kToWavBase64(pcmBuf));
+              const wavBuf = pcm24kToWavBuffer(pcmBuf);
+              resolve({
+                dataUrl: "data:audio/wav;base64," + wavBuf.toString("base64"),
+                wavBuf,
+              });
             } catch {
-              resolve("");
+              resolve(null);
             }
           });
         },
       );
-      req.on("error", () => resolve(""));
+      req.on("error", () => resolve(null));
       req.on("timeout", () => {
         req.destroy();
-        resolve("");
+        resolve(null);
       });
       req.write(body);
       req.end();
     });
   }
 
+  function resolveGeminiKey(providedKey) {
+    let key = String(providedKey || "").trim();
+    if (!key) {
+      try {
+        if (fs.existsSync(CONFIG_FILE)) {
+          const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
+          key = String(cfg?.geminiApiKey || "").trim();
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return key;
+  }
+
+  function readVoiceCache(voice, text) {
+    try {
+      const hash = crypto
+        .createHash("sha1")
+        .update(`${voice}|${text.toLowerCase().trim()}`)
+        .digest("hex");
+      const wavPath = path.join(VOICE_CACHE_DIR, `${hash}.wav`);
+      if (fs.existsSync(wavPath)) {
+        const buf = fs.readFileSync(wavPath);
+        if (buf.length > 44) {
+          return "data:audio/wav;base64," + buf.toString("base64");
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return "";
+  }
+
+  function writeVoiceCache(voice, text, wavBuf) {
+    if (!wavBuf || wavBuf.length <= 44) return;
+    try {
+      fs.mkdirSync(VOICE_CACHE_DIR, { recursive: true });
+      const hash = crypto
+        .createHash("sha1")
+        .update(`${voice}|${text.toLowerCase().trim()}`)
+        .digest("hex");
+      fs.writeFileSync(path.join(VOICE_CACHE_DIR, `${hash}.wav`), wavBuf);
+    } catch {
+      // ignore
+    }
+  }
+
+  ipcMain.handle("island:clone-jarvis-ref", async (_e, geminiVoice, geminiApiKey) => {
+    const gVoice = String(geminiVoice || "Charon").replace(/^gemini:/, "").trim() || "Charon";
+    const key = resolveGeminiKey(geminiApiKey);
+    if (!key) {
+      return { ok: false, error: "Pega primero tu Gemini API Key en Ajustes." };
+    }
+    const sampleText =
+      "Buenas noches, Hebert. Soy tu asistente personal operativo. Todos los sistemas están en línea, la temperatura es agradable y tus proyectos están listos para continuar cuando tú indiques.";
+    const res = await synthesizeGeminiTts(sampleText, gVoice, key);
+    if (!res?.wavBuf) {
+      return { ok: false, error: "No se pudo generar el clip de referencia con Gemini TTS." };
+    }
+    try {
+      fs.mkdirSync(CONFIG_DIR, { recursive: true });
+      fs.writeFileSync(JARVIS_REF_WAV, res.wavBuf);
+      return { ok: true, path: JARVIS_REF_WAV, voice: gVoice, bytes: res.wavBuf.length };
+    } catch (err) {
+      return { ok: false, error: String(err) };
+    }
+  });
+
   ipcMain.handle("island:voice-speak", async (_e, text, voice, geminiApiKey) => {
     const cleanText = String(text || "").trim();
     const requestedVoice = String(voice || "en-US-EmmaMultilingualNeural");
     if (!cleanText) return { audio: "", voice: requestedVoice };
 
-    if (requestedVoice.startsWith("gemini:")) {
-      const gVoice = requestedVoice.slice("gemini:".length).trim() || "Charon";
-      let key = String(geminiApiKey || "").trim();
-      if (!key) {
-        try {
-          if (fs.existsSync(CONFIG_FILE)) {
-            const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
-            key = String(cfg?.geminiApiKey || "").trim();
+    // 1) Caché instantánea en disco (0 ms, 0 cuota API, 0% GPU)
+    const cachedUrl = readVoiceCache(requestedVoice, cleanText);
+    if (cachedUrl) {
+      callVoice({ cmd: "mute_for", seconds: Math.max(2.0, cleanText.length * 0.07) }, 1200).catch(
+        () => {},
+      );
+      return { audio: cachedUrl, voice: requestedVoice, engine: "cache-0ms" };
+    }
+
+    // 2) Voz clonada 100% offline en GPU local (usando jarvis_ref.wav)
+    if (requestedVoice === "clone:jarvis") {
+      if (fs.existsSync(JARVIS_REF_WAV)) {
+        const cloned = await callVoice(
+          { cmd: "speak_clone", text: cleanText, ref_wav: JARVIS_REF_WAV },
+          25000,
+        );
+        if (cloned?.audio) {
+          try {
+            const b64 = String(cloned.audio).replace(/^data:audio\/wav;base64,/, "");
+            writeVoiceCache(requestedVoice, cleanText, Buffer.from(b64, "base64"));
+          } catch {
+            // ignore
           }
-        } catch {
-          // ignore
+          return { audio: cloned.audio, voice: requestedVoice, engine: "clone-offline" };
         }
       }
+      // Si aún no está el clonador local o ref_wav, usa Brian HD grave como fallback instantáneo
+      return await callVoice(
+        { cmd: "speak", text: cleanText, voice: "en-US-BrianMultilingualNeural" },
+        12000,
+      );
+    }
+
+    // 3) Gemini 2.5 Flash Pro TTS con TLS Keep-Alive + guardado automático en caché
+    if (requestedVoice.startsWith("gemini:")) {
+      const gVoice = requestedVoice.slice("gemini:".length).trim() || "Charon";
+      const key = resolveGeminiKey(geminiApiKey);
       if (key) {
         callVoice({ cmd: "mute_for", seconds: Math.max(2.5, cleanText.length * 0.08) }, 1500).catch(
           () => {},
         );
-        const wav = await synthesizeGeminiTts(cleanText, gVoice, key);
-        if (wav) {
-          return { audio: wav, voice: requestedVoice, engine: "gemini-tts" };
+        const result = await synthesizeGeminiTts(cleanText, gVoice, key);
+        if (result?.dataUrl) {
+          if (result.wavBuf) {
+            writeVoiceCache(requestedVoice, cleanText, result.wavBuf);
+            // Si aún no existe un clip de referencia de Jarvis, guarda el primero automáticamente
+            if (!fs.existsSync(JARVIS_REF_WAV) && gVoice === "Charon" && result.wavBuf.length > 48000) {
+              try {
+                fs.writeFileSync(JARVIS_REF_WAV, result.wavBuf);
+              } catch {
+                // ignore
+              }
+            }
+          }
+          return { audio: result.dataUrl, voice: requestedVoice, engine: "gemini-tts" };
         }
       }
       // Fallback automático a voz Multilingual HD más parecida si no hay API key o falló la red

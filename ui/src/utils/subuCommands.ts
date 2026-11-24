@@ -197,10 +197,11 @@ export interface SubuContext {
 }
 
 export const VOICE_PROFILES = [
-  { id: "gemini:Charon", label: "🎙️ Jarvis · Gemini Pro TTS (Ultra-humana)" },
-  { id: "gemini:Aoede", label: "🎙️ AVA · Gemini Pro TTS (Ultra-humana)" },
-  { id: "gemini:Fenrir", label: "🎙️ KAI · Gemini Pro TTS (Grave)" },
-  { id: "gemini:Kore", label: "🎙️ Nova · Gemini Pro TTS (Natural)" },
+  { id: "gemini:Charon", label: "🎙️ Jarvis · Gemini Pro TTS (Ultra-humana + Caché 0ms)" },
+  { id: "gemini:Aoede", label: "🎙️ AVA · Gemini Pro TTS (Ultra-humana + Caché 0ms)" },
+  { id: "gemini:Fenrir", label: "🎙️ KAI · Gemini Pro TTS (Grave + Caché 0ms)" },
+  { id: "gemini:Kore", label: "🎙️ Nova · Gemini Pro TTS (Natural + Caché 0ms)" },
+  { id: "clone:jarvis", label: "🧬 Jarvis Clonado · 100% Offline (RTX 5050)" },
   { id: "en-US-BrianMultilingualNeural", label: "✨ Brian HD · Jarvis Grave (Gratis)" },
   { id: "en-US-AndrewMultilingualNeural", label: "✨ Andrew HD · KAI Natural (Gratis)" },
   { id: "en-US-EmmaMultilingualNeural", label: "✨ Emma HD · AVA Cálida (Gratis)" },

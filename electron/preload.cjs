@@ -39,6 +39,8 @@ const api = {
   project_git_status: (query) => ipcRenderer.invoke("island:project-git-status", query),
   voice_speak: (text, voice, geminiApiKey) =>
     ipcRenderer.invoke("island:voice-speak", text, voice, geminiApiKey),
+  clone_jarvis_ref: (geminiVoice, geminiApiKey) =>
+    ipcRenderer.invoke("island:clone-jarvis-ref", geminiVoice, geminiApiKey),
   get_disk_summary: () => ipcRenderer.invoke("island:get-disk-summary"),
   smart_home: (webhookUrl, action) => ipcRenderer.invoke("island:smart-home", webhookUrl, action),
   voice_set_listen: (enabled) => ipcRenderer.invoke("island:voice-set-listen", enabled),
