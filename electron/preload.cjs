@@ -48,6 +48,8 @@ const api = {
   },
   load_config: () => ipcRenderer.invoke("island:load-config"),
   save_config: (data) => ipcRenderer.invoke("island:save-config", data),
+  get_auto_start: () => ipcRenderer.invoke("island:get-auto-start"),
+  set_auto_start: (enabled) => ipcRenderer.invoke("island:set-auto-start", enabled),
   quit_app: () => ipcRenderer.invoke("island:quit"),
 };
 

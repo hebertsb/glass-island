@@ -2946,6 +2946,23 @@ export default function App() {
                             <span className="glass-switch__thumb" />
                           </button>
                         </div>
+                        <div
+                          className="switch-row"
+                          onClick={() => {
+                            const next = !config.autoStart;
+                            setConfig((p) => ({ ...p, autoStart: next }));
+                            getBridge()?.set_auto_start?.(next).catch(() => {});
+                          }}
+                          title="Iniciar GlassIsland automáticamente al encender Windows"
+                        >
+                          <span>🚀 Inicio Windows</span>
+                          <button
+                            type="button"
+                            className={`glass-switch${config.autoStart ? " glass-switch--on" : ""}`}
+                          >
+                            <span className="glass-switch__thumb" />
+                          </button>
+                        </div>
                       </div>
 
                       <div className="glass-card-row" style={{ gap: 6 }}>

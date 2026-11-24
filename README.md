@@ -19,6 +19,16 @@
 
 **GlassIsland** es una **Isla Dinámica** nativa para Windows diseñada para productividad diaria y desarrollo de software. Vive discretamente en el borde superior de tu pantalla con ojitos expresivos animados, se expande suavemente al acercar el cursor o al llamarla por voz (**"Oye Nova..."**), y unifica música en vivo, Pomodoro Focus, telemetría de laptop, apps oficiales instaladas y un asistente de voz inteligente que **aprende de tu forma de hablar**.
 
+## 📸 Capturas reales
+
+<div align="center">
+  <img src="./docs/screenshots/nova-modo-programacion.jpg" alt="N.O.V.A. activando Modo Programación con Focus y música" width="88%" />
+  <p><em>🎙️ N.O.V.A. activando <b>Modo Programación</b> por voz (Focus 25 min + música + brillo automático + aprendizaje continuo)</em></p>
+  <br />
+  <img src="./docs/screenshots/copilot-inline-handoff.jpg" alt="Copilot inline en GlassIsland con handoff directo a la app de Copilot" width="88%" />
+  <p><em>🤖 Consulta directa a <b>Copilot</b> desde la isla con envío automático a la app oficial de Windows</em></p>
+</div>
+
 ### ✨ Características principales
 
 - **🎨 Motor visual dual**: **Liquid Glass** adaptativo (cambia de color según el módulo o el color dominante del ícono de cada app) + modo **💧 Frutiger Aero** luminoso.
@@ -88,6 +98,12 @@ Luego abre **`+` → `🎙️ Nova & IA`** dentro de GlassIsland y escribe `qwen
 ```powershell
 npx electron .
 ```
+
+### 4. Generar instalador `.exe` para Windows
+```powershell
+npm run dist:win
+```
+El instalador (`GlassIsland Setup 1.0.0.exe`) se genera automáticamente en la carpeta `dist/`. También puedes activar **🚀 Inicio Windows** desde `+ → 🎨 Diseño` para que la isla arranque automáticamente al encender tu PC.
 
 ---
 

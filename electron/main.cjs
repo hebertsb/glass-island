@@ -6,11 +6,16 @@ const os = require("os");
 const path = require("path");
 const readline = require("readline");
 
+const RESOURCES_BASE = app.isPackaged ? process.resourcesPath : path.join(__dirname, "..");
 const DIST_INDEX = path.join(__dirname, "..", "ui", "dist", "index.html");
-const BRIDGE_PS1 = path.join(__dirname, "win_bridge.ps1");
-const VOICE_DAEMON_PY = path.join(__dirname, "voice_daemon.py");
-const VENV_PYTHON = path.join(__dirname, "..", ".venv", "Scripts", "python.exe");
-const ICON_PATH = path.join(__dirname, "..", "assets", "glassisland.ico");
+const BRIDGE_PS1 = app.isPackaged
+  ? path.join(process.resourcesPath, "electron", "win_bridge.ps1")
+  : path.join(__dirname, "win_bridge.ps1");
+const VOICE_DAEMON_PY = app.isPackaged
+  ? path.join(process.resourcesPath, "electron", "voice_daemon.py")
+  : path.join(__dirname, "voice_daemon.py");
+const VENV_PYTHON = path.join(RESOURCES_BASE, ".venv", "Scripts", "python.exe");
+const ICON_PATH = path.join(RESOURCES_BASE, "assets", "glassisland.ico");
 const CONFIG_DIR = path.join(process.env.LOCALAPPDATA || os.homedir(), "GlassIsland");
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
 const KB_FILE = path.join(CONFIG_DIR, "nova_kb.json");
@@ -1611,6 +1616,33 @@ app.whenReady().then(() => {
 
   ipcMain.handle("island:voice-set-engine", async (_e, useWhisper) => {
     return await callVoice({ cmd: "set_engine", whisper: Boolean(useWhisper) }, 5000);
+  });
+
+  ipcMain.handle("island:get-auto-start", () => {
+    try {
+      const settings = app.getLoginItemSettings();
+      return { enabled: Boolean(settings.openAtLogin) };
+    } catch {
+      return { enabled: false };
+    }
+  });
+
+  ipcMain.handle("island:set-auto-start", (_e, enabled) => {
+    try {
+      const openAtLogin = Boolean(enabled);
+      if (app.isPackaged) {
+        app.setLoginItemSettings({ openAtLogin });
+      } else {
+        app.setLoginItemSettings({
+          openAtLogin,
+          path: process.execPath,
+          args: [path.resolve(path.join(__dirname, ".."))],
+        });
+      }
+      return { ok: true, enabled: openAtLogin };
+    } catch (err) {
+      return { ok: false, enabled: false, error: String(err) };
+    }
   });
 
   ipcMain.handle("island:quit", () => {

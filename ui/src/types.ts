@@ -159,6 +159,7 @@ export interface IslandConfig {
   pinnedOpen: boolean;
   lockedPosition: boolean;
   autoHide: boolean;
+  autoStart?: boolean;
   showMouth: boolean;
   assistantName: string;
   voiceEnabled: boolean;
@@ -331,6 +332,8 @@ export interface GlassIslandApi {
   ) => () => void;
   load_config: () => Promise<Partial<IslandConfig>>;
   save_config: (data: IslandConfig) => Promise<boolean>;
+  get_auto_start: () => Promise<{ enabled: boolean }>;
+  set_auto_start: (enabled: boolean) => Promise<{ ok: boolean; enabled: boolean }>;
   quit_app: () => Promise<void>;
 }
 
