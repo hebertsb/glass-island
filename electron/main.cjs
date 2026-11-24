@@ -1038,6 +1038,29 @@ app.whenReady().then(() => {
     return res.canceled || !res.filePaths[0] ? "" : res.filePaths[0];
   });
 
+  // Selector nativo de imagen de portada para cualquier tarjeta del Home (optimizada <= 640px)
+  ipcMain.handle("island:pick-cover-image", async () => {
+    if (!win) return "";
+    const res = await dialog.showOpenDialog(win, {
+      title: "Elige una imagen de portada para esta tarjeta",
+      properties: ["openFile"],
+      filters: [{ name: "Imágenes", extensions: ["png", "jpg", "jpeg", "webp"] }],
+    });
+    if (res.canceled || !res.filePaths[0]) return "";
+    try {
+      let img = nativeImage.createFromPath(res.filePaths[0]);
+      if (img.isEmpty()) return "";
+      const sz = img.getSize();
+      if (sz.width > 640) {
+        img = img.resize({ width: 640, quality: "good" });
+      }
+      const jpg = img.toJPEG(84);
+      return `data:image/jpeg;base64,${jpg.toString("base64")}`;
+    } catch {
+      return "";
+    }
+  });
+
   let cachedInstalledApps = null;
 
   ipcMain.handle("island:list-installed-apps", async () => {

@@ -11,6 +11,7 @@ import {
   FolderOpen,
   GripHorizontal,
   Home,
+  ImagePlus,
   LayoutGrid,
   Lock,
   Mic,
@@ -172,10 +173,6 @@ function TileCoverBg({ src, scrim = "bottom" }: { src: string; scrim?: "bottom" 
       />
     </div>
   );
-}
-
-function MediaLandscapeArt() {
-  return <TileCoverBg src={musicSunsetArt} scrim="bottom" />;
 }
 
 const MODULE_META: Record<
@@ -738,6 +735,24 @@ export default function App() {
         setNewName(parts[parts.length - 1] ?? "Carpeta");
       }
     }
+  }
+
+  async function handlePickTileCover(slotId: string) {
+    const dataUrl = await getBridge()?.pick_cover_image().catch(() => "");
+    if (!dataUrl) return;
+    setConfig((prev) => ({
+      ...prev,
+      tileCovers: { ...(prev.tileCovers ?? {}), [slotId]: dataUrl },
+    }));
+    triggerBurst("happy", 1000);
+  }
+
+  function handleResetTileCover(slotId: string) {
+    setConfig((prev) => {
+      const copy = { ...(prev.tileCovers ?? {}) };
+      delete copy[slotId];
+      return { ...prev, tileCovers: copy };
+    });
   }
 
   function handleAddShortcut(e: React.FormEvent) {
@@ -1607,6 +1622,7 @@ export default function App() {
                       );
                     }
                     if (slotId === "music") {
+                      const customCover = config.tileCovers?.music;
                       return (
                         <div
                           key={`slot-${slotIdx}-music`}
@@ -1614,7 +1630,18 @@ export default function App() {
                           {...dragHandlers}
                           onClick={safeClick(() => setActiveTab("music"))}
                         >
-                          <MediaLandscapeArt />
+                          <TileCoverBg src={customCover || musicSunsetArt} scrim="bottom" />
+                          <button
+                            type="button"
+                            className="tile-cover-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handlePickTileCover("music");
+                            }}
+                            title="Cambiar imagen de portada de Música"
+                          >
+                            <ImagePlus size={11} />
+                          </button>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                             <span className="tile-kicker">
                               {nowPlaying.source || "MULTIMEDIA"}
@@ -1660,6 +1687,7 @@ export default function App() {
                       );
                     }
                     if (slotId === "focus") {
+                      const customCover = config.tileCovers?.focus;
                       return (
                         <div
                           key={`slot-${slotIdx}-focus`}
@@ -1667,7 +1695,18 @@ export default function App() {
                           {...dragHandlers}
                           onClick={safeClick(() => setActiveTab("focus"))}
                         >
-                          <TileCoverBg src={focusCoverArt} scrim="bottom" />
+                          <TileCoverBg src={customCover || focusCoverArt} scrim="bottom" />
+                          <button
+                            type="button"
+                            className="tile-cover-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handlePickTileCover("focus");
+                            }}
+                            title="Cambiar imagen de portada de Focus"
+                          >
+                            <ImagePlus size={11} />
+                          </button>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                             <span className="tile-kicker" style={{ textShadow: "0 1px 6px rgba(0,0,0,0.65)" }}>FOCUS</span>
                             <button
@@ -1756,6 +1795,7 @@ export default function App() {
                         </div>
                       );
                     }
+                    const customLaptopCover = config.tileCovers?.laptop;
                     return (
                       <div
                         key={`slot-${slotIdx}-laptop`}
@@ -1763,7 +1803,18 @@ export default function App() {
                         {...dragHandlers}
                         onClick={safeClick(() => setActiveTab("system"))}
                       >
-                        <TileCoverBg src={laptopCoverArt} scrim="bottom" />
+                        <TileCoverBg src={customLaptopCover || laptopCoverArt} scrim="bottom" />
+                        <button
+                          type="button"
+                          className="tile-cover-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void handlePickTileCover("laptop");
+                          }}
+                          title="Cambiar imagen de portada de Laptop"
+                        >
+                          <ImagePlus size={11} />
+                        </button>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 4 }}>
                           <span className="tile-kicker" style={{ textShadow: "0 1px 6px rgba(0,0,0,0.7)" }}>LAPTOP</span>
                           <span className="hud-battery-pill" title={telemetry.battery_plugged ? "Cargando" : "Con batería"}>
@@ -1999,10 +2050,10 @@ export default function App() {
                 const pct = dur > 0 ? Math.min(100, Math.round((pos / dur) * 100)) : nowPlaying.playing ? 38 : 0;
                 return (
                   <div className="music-stage">
-                    {/* Izquierda: carátula real del video/canción o tu arte "Giro nostálgico al atardecer" */}
+                    {/* Izquierda: carátula real del video/canción o tu portada de Música */}
                     <div className="music-stage__cover">
                       <img
-                        src={nowPlaying.cover || musicSunsetArt}
+                        src={nowPlaying.cover || config.tileCovers?.music || musicSunsetArt}
                         alt={nowPlaying.title}
                       />
                     </div>
@@ -2868,20 +2919,42 @@ export default function App() {
                         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 6 }}>
                           {(config.homeSlots ?? ["laptop", "music", "focus"]).map((slotVal, idx) => (
                             <div key={`cfg-slot-${idx}`} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, opacity: 0.8 }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 10, opacity: 0.85 }}>
                                 <span>Tarjeta #{idx + 1}</span>
-                                {(config.homeSlots ?? []).length > 2 && (
-                                  <X
-                                    size={11}
-                                    style={{ cursor: "pointer" }}
-                                    onClick={() =>
-                                      setConfig((p) => ({
-                                        ...p,
-                                        homeSlots: p.homeSlots.filter((_, i) => i !== idx),
-                                      }))
-                                    }
-                                  />
-                                )}
+                                <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                                  <button
+                                    type="button"
+                                    className="icon-chip"
+                                    style={{ padding: "1px 5px", fontSize: 9.5 }}
+                                    onClick={() => void handlePickTileCover(slotVal)}
+                                    title="Subir imagen de portada personalizada para esta tarjeta"
+                                  >
+                                    <ImagePlus size={10} />
+                                  </button>
+                                  {config.tileCovers?.[slotVal] && (
+                                    <button
+                                      type="button"
+                                      className="icon-chip"
+                                      style={{ padding: "1px 5px", fontSize: 9.5 }}
+                                      onClick={() => handleResetTileCover(slotVal)}
+                                      title="Volver a la portada por defecto"
+                                    >
+                                      ↺
+                                    </button>
+                                  )}
+                                  {(config.homeSlots ?? []).length > 2 && (
+                                    <X
+                                      size={11}
+                                      style={{ cursor: "pointer" }}
+                                      onClick={() =>
+                                        setConfig((p) => ({
+                                          ...p,
+                                          homeSlots: p.homeSlots.filter((_, i) => i !== idx),
+                                        }))
+                                      }
+                                    />
+                                  )}
+                                </div>
                               </div>
                               <select
                                 className="glass-input"

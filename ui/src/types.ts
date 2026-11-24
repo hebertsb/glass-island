@@ -170,6 +170,7 @@ export interface IslandConfig {
   themeStyle: ThemeStyle;
   robotColor: string;
   homeSlots: HomeWidgetId[];
+  tileCovers?: Record<string, string>;
   appWidgets: AppWidget[];
   dockOrder?: (ModuleId | `app:${string}`)[];
   enabledModules: ModuleId[];
@@ -265,6 +266,7 @@ export interface GlassIslandApi {
   snap_current_position: () => Promise<{ anchor: IslandAnchor; x: number; y: number }>;
   pick_files_for_shelf: () => Promise<ShelfFile[]>;
   pick_folder_for_shortcut: () => Promise<string>;
+  pick_cover_image: () => Promise<string>;
   pick_app_widget: () => Promise<{
     name: string;
     exePath: string;

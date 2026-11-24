@@ -372,6 +372,36 @@ body,
   filter: brightness(1.09);
 }
 
+/* Botón discreto solo al pasar el cursor para cambiar la portada de cualquier tarjeta */
+.tile-cover-btn {
+  position: absolute !important;
+  top: 7px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4 !important;
+  opacity: 0;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(15, 23, 42, 0.72);
+  color: #f8fafc;
+  border-radius: 999px;
+  padding: 3px 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: opacity 0.18s ease, background 0.15s ease;
+}
+
+.bento-tile:hover .tile-cover-btn {
+  opacity: 0.92;
+}
+
+.tile-cover-btn:hover {
+  background: rgba(56, 189, 248, 0.42);
+  opacity: 1 !important;
+}
+
 .bento-tile--amber {
   background:
     radial-gradient(circle at 82% 24%, rgba(251, 146, 60, 0.42), transparent 52%),

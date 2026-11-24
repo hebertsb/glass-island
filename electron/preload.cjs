@@ -8,6 +8,7 @@ const api = {
   snap_current_position: () => ipcRenderer.invoke("island:snap-position"),
   pick_files_for_shelf: () => ipcRenderer.invoke("island:pick-files"),
   pick_folder_for_shortcut: () => ipcRenderer.invoke("island:pick-folder"),
+  pick_cover_image: () => ipcRenderer.invoke("island:pick-cover-image"),
   pick_app_widget: () => ipcRenderer.invoke("island:pick-app"),
   list_installed_apps: () => ipcRenderer.invoke("island:list-installed-apps"),
   get_app_icon: (exePath) => ipcRenderer.invoke("island:get-app-icon", exePath),
