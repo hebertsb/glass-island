@@ -147,6 +147,81 @@ function PlatformBadge({ source, platform }: { source: string; platform?: string
   );
 }
 
+function AgentBrandLogo({
+  name,
+  fallbackUrl,
+  size = 18,
+}: {
+  name: string;
+  fallbackUrl?: string;
+  size?: number;
+}) {
+  const low = name.toLowerCase();
+  if (low.includes("copilot")) {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ flexShrink: 0 }}>
+        <defs>
+          <linearGradient id="cp-a" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#38bdf8" />
+            <stop offset="50%" stopColor="#818cf8" />
+            <stop offset="100%" stopColor="#f472b6" />
+          </linearGradient>
+          <linearGradient id="cp-b" x1="0" y1="1" x2="1" y2="0">
+            <stop offset="0%" stopColor="#34d399" />
+            <stop offset="55%" stopColor="#38bdf8" />
+            <stop offset="100%" stopColor="#fbbf24" />
+          </linearGradient>
+        </defs>
+        <path
+          d="M5.5 14.5C4 14.5 3 13.4 3 11.8c0-2.7 1.8-6.3 5.2-6.3 1.7 0 2.7.9 3.4 2.4l1.2 2.8c.5 1.2 1.2 2.3 2.5 2.3 1.1 0 1.8-.8 1.8-2 0-1.6-1-3.4-2.8-3.4-.8 0-1.4.3-1.9.8"
+          fill="none"
+          stroke="url(#cp-a)"
+          strokeWidth="3.2"
+          strokeLinecap="round"
+        />
+        <path
+          d="M18.5 9.5c1.5 0 2.5 1.1 2.5 2.7 0 2.7-1.8 6.3-5.2 6.3-1.7 0-2.7-.9-3.4-2.4l-1.2-2.8c-.5-1.2-1.2-2.3-2.5-2.3-1.1 0-1.8.8-1.8 2 0 1.6 1 3.4 2.8 3.4.8 0 1.4-.3 1.9-.8"
+          fill="none"
+          stroke="url(#cp-b)"
+          strokeWidth="3.2"
+          strokeLinecap="round"
+        />
+      </svg>
+    );
+  }
+  if (low.includes("claude")) {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ flexShrink: 0 }}>
+        <rect width="24" height="24" rx="6" fill="#d97757" />
+        <g stroke="#fff7ed" strokeWidth="2" strokeLinecap="round">
+          <line x1="12" y1="4.5" x2="12" y2="19.5" />
+          <line x1="4.5" y1="12" x2="19.5" y2="12" />
+          <line x1="6.7" y1="6.7" x2="17.3" y2="17.3" />
+          <line x1="17.3" y1="6.7" x2="6.7" y2="17.3" />
+        </g>
+      </svg>
+    );
+  }
+  if (low.includes("gemini")) {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" style={{ flexShrink: 0 }}>
+        <defs>
+          <linearGradient id="gm-g" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#60a5fa" />
+            <stop offset="50%" stopColor="#a78bfa" />
+            <stop offset="100%" stopColor="#f472b6" />
+          </linearGradient>
+        </defs>
+        <path d="M12 2c.7 5.3 4.7 9.3 10 10-5.3.7-9.3 4.7-10 10-.7-5.3-4.7-9.3-10-10 5.3-.7 9.3-4.7 10-10z" fill="url(#gm-g)" />
+      </svg>
+    );
+  }
+  if (fallbackUrl) {
+    return <img src={fallbackUrl} alt="" width={size} height={size} style={{ borderRadius: 4, flexShrink: 0 }} />;
+  }
+  return <Sparkles size={Math.max(14, size - 2)} />;
+}
+
 function TileCoverBg({ src, scrim = "bottom" }: { src: string; scrim?: "bottom" | "soft" }) {
   return (
     <div className="media-art-bg" aria-hidden="true">
@@ -321,6 +396,11 @@ export default function App() {
   const [addingAppPath, setAddingAppPath] = useState<string | null>(null);
   const [quickPrompt, setQuickPrompt] = useState("");
   const [promptToast, setPromptToast] = useState<string | null>(null);
+  const [agentAnswer, setAgentAnswer] = useState<{
+    agent: string;
+    question: string;
+    answer: string;
+  } | null>(null);
   const [webQuery, setWebQuery] = useState("");
   const [activeSearchEngine, setActiveSearchEngine] = useState("google");
   // Asistente de voz Nova (escucha continua real + voz neural es-BO + Base de conocimiento)
@@ -863,6 +943,7 @@ export default function App() {
       setThemeStyle: (style) => setConfig((p) => ({ ...p, themeStyle: style })),
       setActiveTab: (tab) => setActiveTab(tab),
       setQuickPrompt: (txt) => setQuickPrompt(txt),
+      setAgentAnswer: (ans) => setAgentAnswer(ans),
       aiBrainEnabled: config.aiBrainEnabled !== false,
       geminiApiKey: config.geminiApiKey || "",
       ollamaModel: config.ollamaModel || "llama3.2",
@@ -968,6 +1049,7 @@ export default function App() {
       setThemeStyle: (style) => setConfig((p) => ({ ...p, themeStyle: style })),
       setActiveTab: (tab) => setActiveTab(tab),
       setQuickPrompt: (txt) => setQuickPrompt(txt),
+      setAgentAnswer: (ans) => setAgentAnswer(ans),
       aiBrainEnabled: config.aiBrainEnabled !== false,
       geminiApiKey: config.geminiApiKey || "",
       ollamaModel: config.ollamaModel || "llama3.2",
@@ -1045,14 +1127,30 @@ export default function App() {
   async function handleQuickPromptSubmit(e: React.FormEvent, aw: AppWidget) {
     e.preventDefault();
     const txt = quickPrompt.trim();
-    if (txt) {
-      await getBridge()?.set_clipboard(txt).catch(() => {});
-      navigator.clipboard?.writeText(txt).catch(() => {});
-      setPromptToast("✓ Prompt copiado · Abriendo app (pulsa Ctrl+V)");
-      window.setTimeout(() => setPromptToast(null), 3200);
-      setQuickPrompt("");
+    if (!txt) {
+      await handleLaunch(aw.exePath);
+      return;
     }
-    await handleLaunch(aw.exePath);
+    await getBridge()?.set_clipboard(txt).catch(() => {});
+    navigator.clipboard?.writeText(txt).catch(() => {});
+    setQuickPrompt("");
+    setAgentAnswer({ agent: aw.name, question: txt, answer: "Buscando respuesta..." });
+    const llm = await getBridge()
+      ?.nova_llm_route({
+        utterance: `Responde de forma clara y directa en español (máximo 2 oraciones) a: "${txt}". Usa tool "chat".`,
+        assistantName: config.assistantName || "Nova",
+        geminiApiKey: config.geminiApiKey || "",
+        ollamaModel: config.ollamaModel || "qwen2.5:7b",
+        contextSummary: `Consulta inline en ${aw.name}.`,
+      })
+      .catch(() => null);
+    if (llm?.ok && llm.data?.reply) {
+      setAgentAnswer({ agent: aw.name, question: txt, answer: llm.data.reply.trim() });
+    } else {
+      setPromptToast(`✓ Copiado al portapapeles · Pulsa Abrir para pegarlo en ${aw.name}`);
+      window.setTimeout(() => setPromptToast(null), 3200);
+      setAgentAnswer(null);
+    }
   }
 
   useEffect(() => {
@@ -1927,11 +2025,11 @@ export default function App() {
                             flexShrink: 0,
                           }}
                         >
-                          {activeAppWidget.iconDataUrl ? (
-                            <img src={activeAppWidget.iconDataUrl} alt="" width={34} height={34} style={{ borderRadius: 7 }} />
-                          ) : (
-                            <Sparkles size={24} color={activeAppWidget.brandColor} />
-                          )}
+                          <AgentBrandLogo
+                            name={activeAppWidget.name}
+                            fallbackUrl={activeAppWidget.iconDataUrl}
+                            size={34}
+                          />
                         </div>
                         <div style={{ minWidth: 0, flex: 1 }}>
                           <div className="tile-kicker" style={{ color: activeAppWidget.brandColor }}>
@@ -1965,20 +2063,41 @@ export default function App() {
 
                     {/* Solo las apps de IA / Agente muestran la caja de nuevo chat / prompt rápido */}
                     {isAiAgentApp(activeAppWidget.name, activeAppWidget.processName) ? (
-                      <form
-                        onSubmit={(e) => handleQuickPromptSubmit(e, activeAppWidget)}
-                        style={{ display: "flex", gap: 6, alignItems: "center" }}
-                      >
-                        <input
-                          className="glass-input"
-                          placeholder={`Nuevo chat / prompt rápido para ${activeAppWidget.name}… (Enter para abrir)`}
-                          value={quickPrompt}
-                          onChange={(e) => setQuickPrompt(e.target.value)}
-                        />
-                        <button type="submit" className="glass-btn" style={{ borderColor: activeAppWidget.brandColor, flexShrink: 0 }}>
-                          Enviar ↗
-                        </button>
-                      </form>
+                      <>
+                        <form
+                          onSubmit={(e) => handleQuickPromptSubmit(e, activeAppWidget)}
+                          style={{ display: "flex", gap: 6, alignItems: "center" }}
+                        >
+                          <input
+                            className="glass-input"
+                            placeholder={`Pregúntale directo a ${activeAppWidget.name} aquí (Enter)…`}
+                            value={quickPrompt}
+                            onChange={(e) => setQuickPrompt(e.target.value)}
+                          />
+                          <button type="submit" className="glass-btn" style={{ borderColor: activeAppWidget.brandColor, flexShrink: 0 }}>
+                            Preguntar ↗
+                          </button>
+                        </form>
+                        {agentAnswer && (
+                          <div
+                            className="glass-card-row"
+                            style={{
+                              flexDirection: "column",
+                              alignItems: "flex-start",
+                              gap: 3,
+                              background: "rgba(15, 23, 42, 0.58)",
+                              borderColor: "rgba(56, 189, 248, 0.35)",
+                            }}
+                          >
+                            <div style={{ fontSize: 10, opacity: 0.72 }}>
+                              Consulta: <strong>{agentAnswer.question}</strong>
+                            </div>
+                            <div style={{ fontSize: 11.5, color: "#e0f2fe", lineHeight: 1.38 }}>
+                              {agentAnswer.answer}
+                            </div>
+                          </div>
+                        )}
+                      </>
                     ) : activeAppWidget.name.toLowerCase().includes("discoclaro") ? (
                       <div className="glass-card-row" style={{ justifyContent: "space-between" }}>
                         <span style={{ fontSize: 12 }}>
@@ -3168,11 +3287,11 @@ export default function App() {
                         onClick={() => setActiveTab(key)}
                         title={aw.name}
                       >
-                        {aw.iconDataUrl ? (
-                          <img src={aw.iconDataUrl} alt="" width={15} height={15} style={{ borderRadius: 3 }} />
-                        ) : (
-                          <Sparkles size={13} color={aw.brandColor} />
-                        )}
+                        <AgentBrandLogo
+                          name={aw.name}
+                          fallbackUrl={aw.iconDataUrl}
+                          size={19}
+                        />
                         {isActive && <span>{aw.name}</span>}
                       </button>
                     );

@@ -186,6 +186,7 @@ export interface SubuContext {
   setThemeStyle: (style: ThemeStyle) => void;
   setActiveTab?: (tab: ModuleId | `app:${string}`) => void;
   setQuickPrompt?: (text: string) => void;
+  setAgentAnswer?: (ans: { agent: string; question: string; answer: string } | null) => void;
   aiBrainEnabled?: boolean;
   geminiApiKey?: string;
   ollamaModel?: string;
@@ -486,16 +487,45 @@ export async function executeSubuCommand(
       if (inst) launchTarget = inst.lnkPath || inst.exePath;
     }
 
-    // Abre el agente y envía la consulta automáticamente (Ctrl+V + Enter)
-    if (api?.launch_and_paste) {
-      await api.launch_and_paste(launchTarget, promptText, prettyAgent);
-    } else {
-      await api?.launch(launchTarget);
+    // NO abre la ventana externa automáticamente: responde DIRECTO dentro de la tarjeta en la Isla
+    // usando el Cerebro IA (Gemini / Ollama qwen2.5:7b) y solo abre la app si el usuario dice "sí"
+    let inlineAnswer = "";
+    if (api?.nova_llm_route) {
+      const llm = await api
+        .nova_llm_route({
+          utterance: `Responde de forma clara, directa y útil en español (máximo 2 oraciones) a esta consulta: "${promptText}". Usa tool "chat".`,
+          assistantName: name,
+          geminiApiKey: ctx.geminiApiKey,
+          ollamaModel: ctx.ollamaModel || "qwen2.5:7b",
+          contextSummary: `Respuesta directa dentro de la tarjeta de ${prettyAgent} en GlassIsland.`,
+        })
+        .catch(() => null);
+      if (llm?.ok && llm.data?.reply) {
+        inlineAnswer = llm.data.reply.trim();
+      }
     }
 
-    const reply = `¡De una! Abriendo ${prettyAgent} y buscando "${promptText}".`;
+    ctx.setAgentAnswer?.({
+      agent: prettyAgent,
+      question: promptText,
+      answer:
+        inlineAnswer ||
+        `Consulta lista y copiada al portapapeles ("${promptText}"). Pulsa Abrir o di "sí" para pegarla en ${prettyAgent}.`,
+    });
+
+    setPendingConfirm({
+      kind: "launch",
+      target: launchTarget,
+      label: prettyAgent,
+      promptText,
+      at: Date.now(),
+    });
+
+    const reply = inlineAnswer
+      ? `${inlineAnswer} ¿Quieres que te abra ${prettyAgent} para verlo ahí también?`
+      : `Ya dejé lista tu consulta en ${prettyAgent}. ¿Quieres que abra la app para que lo veas tú mismo?`;
     pushContextTurn("assistant", reply, "open_app", prettyAgent);
-    return { ok: true, reply };
+    return { ok: true, reply, keepOpen: true };
   }
 
   // Órdenes compuestas múltiples (con o sin "y" entre cláusulas):
