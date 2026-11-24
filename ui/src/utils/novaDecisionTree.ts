@@ -67,7 +67,7 @@ export function consumePendingConfirm(): PendingConfirmation | null {
 
 export function setPendingFolders(folders: FolderChoice[]): void {
   contextState.pendingFolders = folders;
-  contextState.pendingFoldersUntil = folders.length > 0 ? Date.now() + 30_000 : 0;
+  contextState.pendingFoldersUntil = folders.length > 0 ? Date.now() + 90_000 : 0;
 }
 
 export function getActivePendingFolders(): FolderChoice[] {

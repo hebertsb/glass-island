@@ -840,7 +840,7 @@ app.whenReady().then(() => {
         "http://127.0.0.1:11434/api/chat",
         {
           method: "POST",
-          timeout: 12000,
+          timeout: 18000,
           headers: {
             "Content-Type": "application/json",
             "Content-Length": Buffer.byteLength(body),
@@ -1722,7 +1722,7 @@ app.whenReady().then(() => {
             "Content-Type": "application/json",
             "Content-Length": Buffer.byteLength(body),
           },
-          timeout: 12000,
+          timeout: 18000,
         },
         (res) => {
           let raw = "";
@@ -1924,11 +1924,9 @@ app.whenReady().then(() => {
           return { audio: cloned.audio, voice: requestedVoice, engine: "clone-fallback" };
         }
       }
-      // Respaldo instantáneo (300 ms) para garantizar que Nova NUNCA quede en silencio
+      // Respaldo instantáneo (300 ms) 100% en español latino puro (evita voces Multilingual que cambian a portugués)
       const isMale = /charon|fenrir|puck|orus/i.test(gVoice);
-      const fallbackVoice = isMale
-        ? "en-US-BrianMultilingualNeural"
-        : "en-US-EmmaMultilingualNeural";
+      const fallbackVoice = isMale ? "es-MX-JorgeNeural" : "es-BO-SofiaNeural";
       return await callVoice({ cmd: "speak", text: cleanText, voice: fallbackVoice }, 12000);
     }
 

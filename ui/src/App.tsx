@@ -992,13 +992,17 @@ export default function App() {
       // mantiene el contexto abierto 28 segundos para responder directo SIN decir "Nova"
       if (res.unknownPhrase) return;
       if (res.keepOpen || (res.folderChoices && res.folderChoices.length > 0)) {
+        if (res.folderChoices && res.folderChoices.length > 0) {
+          // Reinicia el contador de 90s DESPUÉS de que Nova termine de hablar para que nunca expire antes de responder
+          setPendingFolders(res.folderChoices);
+        }
         if (clearVoiceTimerRef.current) window.clearTimeout(clearVoiceTimerRef.current);
         clearVoiceTimerRef.current = window.setTimeout(() => {
           setFolderChoices([]);
           setPendingFolders([]);
           setSubuInput("");
           setSubuReply(null);
-        }, 28000);
+        }, 65000);
         return;
       }
       if (clearVoiceTimerRef.current) window.clearTimeout(clearVoiceTimerRef.current);

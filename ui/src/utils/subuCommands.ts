@@ -1317,11 +1317,7 @@ export async function executeSubuCommand(
     }
     if (found.length > 1) {
       setPendingFolders(found);
-      const listSpoken = found
-        .slice(0, 4)
-        .map((f, i) => `${i + 1}, ${f.name}`)
-        .join("; ");
-      const reply = `Encontré ${found.length} carpetas parecidas a "${matchedProjName}": ${listSpoken}. Haz clic en una o dime cuál abro, por ejemplo: abre la primera o la segunda.`;
+      const reply = `Encontré ${found.length} carpetas parecidas a ${matchedProjName}. Haz clic en una o dime cuál abro, por ejemplo la primera o la segunda.`;
       pushContextTurn("assistant", reply, "open_project", matchedProjName);
       return {
         ok: true,
@@ -1539,7 +1535,7 @@ export async function executeSubuCommand(
 
   return {
     ok: false,
-    reply: `No estoy segura de "${targetQuery}". Elige abajo qué herramienta usar y lo aprenderé para la próxima:`,
+    reply: `No entendí bien "${targetQuery}". Elige abajo qué herramienta usar y lo aprenderé para la próxima.`,
     unknownPhrase: q,
   };
 }
