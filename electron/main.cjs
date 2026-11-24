@@ -628,6 +628,20 @@ app.whenReady().then(() => {
         spawn("rundll32.exe", ["user32.dll,LockWorkStation"], { detached: true, stdio: "ignore" }).unref();
         return { ok: true, message: "Pantalla bloqueada." };
       }
+      if (act === "minimize_all") {
+        const psMin = `(New-Object -ComObject Shell.Application).MinimizeAll()`;
+        execFile(PS_EXE, ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", psMin], { windowsHide: true, timeout: 3000 }, () => {});
+        return { ok: true, message: "Todas las ventanas minimizadas." };
+      }
+      if (act === "empty_recycle_bin") {
+        const psBin = `Clear-RecycleBin -Force -ErrorAction SilentlyContinue`;
+        execFile(PS_EXE, ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", psBin], { windowsHide: true, timeout: 5000 }, () => {});
+        return { ok: true, message: "Papelera de reciclaje vaciada." };
+      }
+      if (act === "sleep") {
+        spawn("rundll32.exe", ["powrprof.dll,SetSuspendState", "0,1,0"], { detached: true, stdio: "ignore" }).unref();
+        return { ok: true, message: "Suspendiendo tu laptop." };
+      }
       if (act === "downloads") {
         await shell.openPath(path.join(os.homedir(), "Downloads"));
         return { ok: true, message: "Abriendo Descargas." };
@@ -927,6 +941,80 @@ app.whenReady().then(() => {
     const fp = String(folderPath || "").trim();
     if (!fp || !fs.existsSync(fp)) return { ok: false, error: "not_found" };
     return launchFolderInCode(fp);
+  });
+
+  ipcMain.handle("island:open-project-terminal", async (_e, query) => {
+    const list = await ipcMain._events?.["island:find-projects"] ? [] : [];
+    void list;
+    const normFolder = (s) =>
+      String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+    const qNorm = normFolder(query);
+    if (!qNorm) return { ok: false };
+    const roots = ["D:\\UNIVERSIDAD\\proyectos_Personales", "D:\\UNIVERSIDAD", path.join(os.homedir(), "Desktop")].filter((d) => fs.existsSync(d));
+    const skip = new Set(["node_modules", ".git", ".venv", "dist", "build", "__macosx"]);
+    let foundPath = "";
+    const walk = (dir, depth = 0) => {
+      if (depth > 3 || foundPath) return;
+      let entries = [];
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+      for (const e of entries) {
+        if (!e.isDirectory() || skip.has(e.name.toLowerCase())) continue;
+        const full = path.join(dir, e.name);
+        const n = normFolder(e.name);
+        if (n === qNorm || n.includes(qNorm)) { foundPath = full; return; }
+        walk(full, depth + 1);
+      }
+    };
+    for (const r of roots) walk(r, 0);
+    if (!foundPath) return { ok: false };
+    spawn("wt.exe", ["-d", foundPath], { detached: true, stdio: "ignore" }).on("error", () => {
+      spawn("cmd.exe", ["/c", "start", "powershell.exe", "-NoExit", "-Command", `Set-Location '${foundPath}'`], { detached: true, stdio: "ignore" }).unref();
+    }).unref();
+    return { ok: true, folderName: path.basename(foundPath), path: foundPath };
+  });
+
+  ipcMain.handle("island:project-git-status", async (_e, query) => {
+    const normFolder = (s) =>
+      String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+    const qNorm = normFolder(query);
+    if (!qNorm) return { ok: false };
+    const roots = ["D:\\UNIVERSIDAD\\proyectos_Personales", "D:\\UNIVERSIDAD"].filter((d) => fs.existsSync(d));
+    const skip = new Set(["node_modules", ".git", ".venv", "dist", "build", "__macosx"]);
+    let foundPath = "";
+    const walk = (dir, depth = 0) => {
+      if (depth > 3 || foundPath) return;
+      let entries = [];
+      try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+      for (const e of entries) {
+        if (!e.isDirectory() || skip.has(e.name.toLowerCase())) continue;
+        const full = path.join(dir, e.name);
+        const n = normFolder(e.name);
+        if (n === qNorm || n.includes(qNorm)) { foundPath = full; return; }
+        walk(full, depth + 1);
+      }
+    };
+    for (const r of roots) walk(r, 0);
+    if (!foundPath || !fs.existsSync(path.join(foundPath, ".git"))) {
+      return { ok: false, error: "no_git" };
+    }
+    return await new Promise((resolve) => {
+      execFile(
+        "git",
+        ["-C", foundPath, "status", "--short", "--branch"],
+        { windowsHide: true, timeout: 4000 },
+        (_err, stdout) => {
+          const lines = (stdout || "").trim().split(/\r?\n/).filter(Boolean);
+          const branchLine = (lines[0] || "").replace(/^##\s*/, "");
+          const changes = Math.max(0, lines.length - 1);
+          resolve({
+            ok: true,
+            folderName: path.basename(foundPath),
+            branch: branchLine.split("...")[0] || "main",
+            changes,
+          });
+        },
+      );
+    });
   });
 
   ipcMain.handle("island:find-projects", async (_e, query) => {
@@ -1478,6 +1566,10 @@ app.whenReady().then(() => {
 
   ipcMain.handle("island:voice-mute-for", async (_e, seconds) => {
     return await callVoice({ cmd: "mute_for", seconds: Number(seconds) || 3 }, 2000);
+  });
+
+  ipcMain.handle("island:voice-set-engine", async (_e, useWhisper) => {
+    return await callVoice({ cmd: "set_engine", whisper: Boolean(useWhisper) }, 5000);
   });
 
   ipcMain.handle("island:quit", () => {

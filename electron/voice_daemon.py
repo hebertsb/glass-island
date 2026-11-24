@@ -35,6 +35,38 @@ _state_lock = threading.Lock()
 _listen_enabled = True
 _muted_for_tts_until = 0.0
 _voice_name = "es-BO-SofiaNeural"
+_use_whisper = False
+_whisper_model = None
+_whisper_loading = False
+
+
+def _ensure_whisper_async() -> None:
+    global _whisper_model, _whisper_loading
+    if _whisper_model is not None or _whisper_loading:
+        return
+    _whisper_loading = True
+
+    def _loader() -> None:
+        global _whisper_model, _whisper_loading
+        try:
+            from faster_whisper import WhisperModel  # type: ignore
+
+            try:
+                # Intenta GPU NVIDIA (RTX 5050) con large-v3-turbo en int8_float16 (~1.6 GB VRAM)
+                _whisper_model = WhisperModel(
+                    "large-v3-turbo", device="cuda", compute_type="int8_float16"
+                )
+                emit({"event": "whisper_ready", "device": "cuda", "model": "large-v3-turbo"})
+            except Exception:
+                # Fallback liviano en CPU (0% GPU)
+                _whisper_model = WhisperModel("small", device="cpu", compute_type="int8")
+                emit({"event": "whisper_ready", "device": "cpu", "model": "small"})
+        except Exception as exc:
+            emit({"event": "whisper_error", "message": str(exc)})
+        finally:
+            _whisper_loading = False
+
+    threading.Thread(target=_loader, daemon=True).start()
 
 
 def emit(obj: dict) -> None:
@@ -190,11 +222,25 @@ def _listen_loop() -> None:
 
 def _transcribe_async(recognizer: sr.Recognizer, audio_f32: np.ndarray) -> None:
     try:
+        with _state_lock:
+            want_whisper = _use_whisper
+        if want_whisper and _whisper_model is not None:
+            segments, _ = _whisper_model.transcribe(
+                audio_f32,
+                language="es",
+                beam_size=1,
+                vad_filter=False,
+                initial_prompt="Nova, Copilot, Claude, Visual Studio Code, YouTube, Firestone, Santa Cruz, Bolivia.",
+            )
+            text = " ".join(seg.text.strip() for seg in segments).strip()
+            if text:
+                emit({"event": "heard", "text": text, "engine": "whisper"})
+                return
         pcm = np.clip(audio_f32 * 32767.0, -32768, 32767).astype(np.int16)
         audio_data = _pcm_to_audio_data(pcm)
         text = recognizer.recognize_google(audio_data, language="es-BO")
         if text and text.strip():
-            emit({"event": "heard", "text": text.strip()})
+            emit({"event": "heard", "text": text.strip(), "engine": "google"})
     except sr.UnknownValueError:
         pass
     except Exception:
@@ -221,6 +267,13 @@ def _stdin_loop() -> None:
             with _state_lock:
                 _listen_enabled = bool(req.get("enabled", True))
             emit({"id": req_id, "data": {"ok": True, "enabled": _listen_enabled}})
+        elif cmd == "set_engine":
+            want = bool(req.get("whisper", False))
+            with _state_lock:
+                _use_whisper = want
+            if want:
+                _ensure_whisper_async()
+            emit({"id": req_id, "data": {"ok": True, "whisper": _use_whisper}})
         elif cmd == "mute_for":
             secs = float(req.get("seconds", 3.0))
             with _state_lock:

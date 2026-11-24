@@ -34,9 +34,12 @@ const api = {
   open_project: (query) => ipcRenderer.invoke("island:open-project", query),
   find_projects: (query) => ipcRenderer.invoke("island:find-projects", query),
   open_path_in_code: (folderPath) => ipcRenderer.invoke("island:open-path-in-code", folderPath),
+  open_project_terminal: (query) => ipcRenderer.invoke("island:open-project-terminal", query),
+  project_git_status: (query) => ipcRenderer.invoke("island:project-git-status", query),
   voice_speak: (text, voice) => ipcRenderer.invoke("island:voice-speak", text, voice),
   voice_set_listen: (enabled) => ipcRenderer.invoke("island:voice-set-listen", enabled),
   voice_mute_for: (seconds) => ipcRenderer.invoke("island:voice-mute-for", seconds),
+  voice_set_engine: (useWhisper) => ipcRenderer.invoke("island:voice-set-engine", useWhisper),
   on_voice_event: (cb) => {
     const fn = (_e, msg) => cb(msg);
     ipcRenderer.on("island:voice-event", fn);

@@ -163,6 +163,7 @@ export interface IslandConfig {
   assistantName: string;
   voiceEnabled: boolean;
   alwaysListen: boolean;
+  whisperOffline?: boolean;
   voiceName: string;
   aiBrainEnabled?: boolean;
   geminiApiKey?: string;
@@ -317,9 +318,12 @@ export interface GlassIslandApi {
   open_project: (query: string) => Promise<{ ok: boolean; path?: string; folderName?: string; openedWith?: string; error?: string }>;
   find_projects: (query: string) => Promise<{ name: string; path: string; parent: string; score: number }[]>;
   open_path_in_code: (folderPath: string) => Promise<{ ok: boolean; path?: string; folderName?: string; openedWith?: string }>;
+  open_project_terminal: (query: string) => Promise<{ ok: boolean; folderName?: string; path?: string }>;
+  project_git_status: (query: string) => Promise<{ ok: boolean; folderName?: string; branch?: string; changes?: number }>;
   voice_speak: (text: string, voice?: string) => Promise<{ audio?: string; voice?: string }>;
   voice_set_listen: (enabled: boolean) => Promise<{ ok?: boolean; enabled?: boolean }>;
   voice_mute_for: (seconds: number) => Promise<{ ok?: boolean }>;
+  voice_set_engine: (useWhisper: boolean) => Promise<{ ok?: boolean; whisper?: boolean }>;
   on_voice_event: (
     cb: (msg: { event: string; text?: string; active?: boolean; message?: string }) => void,
   ) => () => void;

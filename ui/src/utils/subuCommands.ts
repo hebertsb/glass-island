@@ -187,6 +187,7 @@ export interface SubuContext {
   setActiveTab?: (tab: ModuleId | `app:${string}`) => void;
   setQuickPrompt?: (text: string) => void;
   setAgentAnswer?: (ans: { agent: string; question: string; answer: string } | null) => void;
+  scheduleReminder?: (delayMs: number, message: string) => void;
   aiBrainEnabled?: boolean;
   geminiApiKey?: string;
   ollamaModel?: string;
@@ -627,7 +628,121 @@ export async function executeSubuCommand(
       : { ok: false, reply: `No encontré una ventana abierta de ${appTarget}.` };
   }
 
-  // 0f. Tools diarios del sistema (captura de pantalla, bloquear PC, carpetas rápidas)
+  // 0f. Tools diarios del sistema (modos/rutinas, portapapeles inteligente, recordatorios, git/terminal, captura, energía)
+  // 1) Modos / Rutinas en 1 orden
+  if (q.includes("modo programacion") || q.includes("modo programar") || q.includes("modo codigo")) {
+    ctx.setBrightness(75);
+    await api?.set_brightness(75);
+    ctx.startFocus(25);
+    ctx.setActiveTab?.("focus");
+    await api?.play_media_query("lofi hip hop beats to code", "youtube");
+    const reply = "Activando modo programación: música lofi, brillo al 75% y Focus de 25 minutos.";
+    pushContextTurn("assistant", reply, "focus");
+    return { ok: true, reply };
+  }
+  if (q.includes("modo universidad") || q.includes("modo estudio")) {
+    await api?.system_action("university");
+    ctx.setActiveTab?.("notes");
+    const pending = ctx.todos.filter((t) => !t.done).length;
+    const reply = `Activando modo universidad: abriendo tu carpeta y tienes ${pending} tareas pendientes.`;
+    pushContextTurn("assistant", reply, "tasks");
+    return { ok: true, reply };
+  }
+  if (q.includes("modo descanso") || q.includes("modo relax")) {
+    ctx.pauseFocus();
+    ctx.setBrightness(60);
+    await api?.set_brightness(60);
+    await api?.play_media_query("musica chill relajante", "youtube");
+    ctx.setActiveTab?.("music");
+    const reply = "Activando modo descanso: Focus pausado, brillo al 60% y música relajante.";
+    pushContextTurn("assistant", reply, "play_music");
+    return { ok: true, reply };
+  }
+
+  // 2) Recordatorios con alarma hablada ("recuérdame en 15 minutos subir los cambios")
+  const remMatch = q.match(
+    /^(?:recuerdame|recordame|avisame|pon una alarma|pon un recordatorio)\s+en\s+(\d{1,3})\s+(segundos?|minutos?|horas?)\s*(?:que\s+|de\s+|para\s+)?(.+)$/,
+  );
+  if (remMatch) {
+    const qty = Math.max(1, Number(remMatch[1]));
+    const unit = remMatch[2];
+    const msg = remMatch[3].trim();
+    const mult = unit.startsWith("hora") ? 3600_000 : unit.startsWith("min") ? 60_000 : 1000;
+    ctx.scheduleReminder?.(qty * mult, msg);
+    const reply = `¡Anotado! Te avisaré en ${qty} ${unit}: ${msg}.`;
+    pushContextTurn("assistant", reply, "reminder", msg);
+    return { ok: true, reply };
+  }
+
+  // 3) Portapapeles inteligente ("traduce lo que copié", "explícame el error que copié", "resume lo que copié")
+  if (
+    /(?:traduce|traduci|explica|explicame|resume|resumime|analiza|corrige)\b.*(?:copie|portapapeles|clipboard|este error|el error)/.test(
+      q,
+    )
+  ) {
+    const clip = ((await api?.get_clipboard().catch(() => "")) || "").trim();
+    if (!clip) {
+      return { ok: false, reply: "Tu portapapeles está vacío. Copia primero el texto o error con Ctrl+C." };
+    }
+    const actionLabel = q.includes("traduc")
+      ? "Traduce al español de forma clara"
+      : q.includes("resum")
+        ? "Resume en 2 frases en español"
+        : "Explica brevemente en español qué significa y cómo resolver este error o código";
+    if (api?.nova_llm_route) {
+      const llm = await api
+        .nova_llm_route({
+          utterance: `${actionLabel} (máximo 2 oraciones, usa tool "chat"):\n${clip.slice(0, 1200)}`,
+          assistantName: name,
+          geminiApiKey: ctx.geminiApiKey,
+          ollamaModel: ctx.ollamaModel || "qwen2.5:7b",
+          contextSummary: "Análisis inteligente del portapapeles de Hebert.",
+        })
+        .catch(() => null);
+      if (llm?.ok && llm.data?.reply) {
+        const reply = llm.data.reply.trim();
+        pushContextTurn("assistant", reply, "clipboard");
+        return { ok: true, reply, keepOpen: true };
+      }
+    }
+    return { ok: true, reply: `En tu portapapeles tienes: "${clip.slice(0, 120)}".` };
+  }
+
+  // 4) Terminal y Git rápido por proyecto ("abre terminal en discoclaro", "git status de glass island")
+  const termMatch = q.match(/^(?:abre|abrime|abreme)\s+(?:la\s+|una\s+)?(?:terminal|consola|powershell)\s+(?:en|de)\s+(?:el\s+proyecto\s+)?(.+)$/);
+  if (termMatch) {
+    const res = await api?.open_project_terminal(termMatch[1].trim());
+    return res?.ok
+      ? { ok: true, reply: `¡Claro! Abriendo terminal en ${res.folderName}.` }
+      : { ok: false, reply: `No encontré la carpeta "${termMatch[1].trim()}".` };
+  }
+  const gitMatch = q.match(/(?:git\s+status|estado\s+de\s+git|como\s+esta\s+el\s+git)\s+(?:de|del|en)\s+(?:el\s+proyecto\s+)?(.+)$/);
+  if (gitMatch) {
+    const res = await api?.project_git_status(gitMatch[1].trim());
+    if (res?.ok) {
+      const reply =
+        res.changes === 0
+          ? `El repositorio ${res.folderName} en la rama ${res.branch} está limpio, sin cambios pendientes.`
+          : `El repositorio ${res.folderName} en la rama ${res.branch} tiene ${res.changes} archivos modificados sin subir.`;
+      return { ok: true, reply };
+    }
+    return { ok: false, reply: `No encontré un repositorio Git para "${gitMatch[1].trim()}".` };
+  }
+
+  // 5) Control de escritorio / energía (minimizar todo, vaciar papelera, suspender)
+  if (q.includes("minimiza todo") || q.includes("muestra el escritorio") || q.includes("mostrame el escritorio")) {
+    await api?.system_action("minimize_all");
+    return { ok: true, reply: "Listo, todas las ventanas minimizadas." };
+  }
+  if (q.includes("vacia la papelera") || q.includes("vaciar papelera") || q.includes("limpia la papelera")) {
+    await api?.system_action("empty_recycle_bin");
+    return { ok: true, reply: "¡Belleza! Papelera de reciclaje vaciada." };
+  }
+  if (q.includes("suspende la laptop") || q.includes("suspender laptop") || q.includes("suspende el pc")) {
+    await api?.system_action("sleep");
+    return { ok: true, reply: "Suspendiendo tu laptop. ¡Hasta pronto!" };
+  }
+
   if (q.includes("captura") || q.includes("screenshot") || q.includes("pantallazo")) {
     const res = await api?.system_action("screenshot");
     return res?.ok

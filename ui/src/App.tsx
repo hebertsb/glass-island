@@ -946,6 +946,25 @@ export default function App() {
       setActiveTab: (tab) => setActiveTab(tab),
       setQuickPrompt: (txt) => setQuickPrompt(txt),
       setAgentAnswer: (ans) => setAgentAnswer(ans),
+      scheduleReminder: (delayMs, message) => {
+        window.setTimeout(() => {
+          setExpanded(true);
+          setSubuOpen(true);
+          getBridge()?.set_ignore_mouse(false).catch(() => {});
+          const alertMsg = `¡Hebert! Recordatorio: ${message}.`;
+          setSubuReply(alertMsg);
+          triggerBurst("excited", 3000);
+          setGreenGlow(true);
+          window.setTimeout(() => setGreenGlow(false), 3500);
+          void speakAsSubu(
+            alertMsg,
+            configRef.current.voiceEnabled !== false,
+            configRef.current.voiceName || "es-BO-SofiaNeural",
+            () => setSpeaking(true),
+            () => setSpeaking(false),
+          );
+        }, delayMs);
+      },
       aiBrainEnabled: config.aiBrainEnabled !== false,
       geminiApiKey: config.geminiApiKey || "",
       ollamaModel: config.ollamaModel || "llama3.2",
@@ -1013,6 +1032,7 @@ export default function App() {
   useEffect(() => {
     configRef.current = config;
     getBridge()?.voice_set_listen(config.alwaysListen !== false).catch(() => {});
+    getBridge()?.voice_set_engine(Boolean(config.whisperOffline)).catch(() => {});
   }, [config]);
 
   useEffect(() => {
@@ -1052,6 +1072,25 @@ export default function App() {
       setActiveTab: (tab) => setActiveTab(tab),
       setQuickPrompt: (txt) => setQuickPrompt(txt),
       setAgentAnswer: (ans) => setAgentAnswer(ans),
+      scheduleReminder: (delayMs, message) => {
+        window.setTimeout(() => {
+          setExpanded(true);
+          setSubuOpen(true);
+          getBridge()?.set_ignore_mouse(false).catch(() => {});
+          const alertMsg = `¡Hebert! Recordatorio: ${message}.`;
+          setSubuReply(alertMsg);
+          triggerBurst("excited", 3000);
+          setGreenGlow(true);
+          window.setTimeout(() => setGreenGlow(false), 3500);
+          void speakAsSubu(
+            alertMsg,
+            configRef.current.voiceEnabled !== false,
+            configRef.current.voiceName || "es-BO-SofiaNeural",
+            () => setSpeaking(true),
+            () => setSpeaking(false),
+          );
+        }, delayMs);
+      },
       aiBrainEnabled: config.aiBrainEnabled !== false,
       geminiApiKey: config.geminiApiKey || "",
       ollamaModel: config.ollamaModel || "llama3.2",
@@ -2748,6 +2787,22 @@ export default function App() {
                             type="button"
                             className={`glass-switch${config.aiBrainEnabled !== false ? " glass-switch--on" : ""}`}
                             aria-checked={config.aiBrainEnabled !== false}
+                          >
+                            <span className="glass-switch__thumb" />
+                          </button>
+                        </div>
+                        <div
+                          className="switch-row"
+                          onClick={() =>
+                            setConfig((p) => ({ ...p, whisperOffline: !p.whisperOffline }))
+                          }
+                          title="Activa faster-whisper (large-v3-turbo en RTX 5050) 100% offline con tildes y ¿?"
+                        >
+                          <span>⚡ Whisper Offline</span>
+                          <button
+                            type="button"
+                            className={`glass-switch${config.whisperOffline ? " glass-switch--on" : ""}`}
+                            aria-checked={Boolean(config.whisperOffline)}
                           >
                             <span className="glass-switch__thumb" />
                           </button>
