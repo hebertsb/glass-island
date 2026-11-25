@@ -1682,20 +1682,52 @@ export default function App() {
                           setKbLearnedCount(getNovaKbStats().learnedCount);
                           void runSubuOrder(`abre ${appName}`);
                         }}
-                        title="Aprender que te referías a una de tus apps (ej. claro -> Claude)"
+                        onFocus={() => {
+                          if (installedApps.length === 0) {
+                            getBridge()
+                              ?.list_installed_apps()
+                              .then((list) => {
+                                if (Array.isArray(list) && list.length > 0) setInstalledApps(list);
+                              })
+                              .catch(() => {});
+                          }
+                        }}
+                        title="Aprender que te referías a cualquiera de tus apps instaladas"
                       >
                         <option value="" style={{ background: "#0f172a" }}>
-                          📱 Elegir app…
+                          📱 Elegir app ({installedApps.length || (config.appWidgets?.length ?? 0)})…
                         </option>
                         {(config.appWidgets ?? []).map((aw) => (
-                          <option key={aw.id} value={aw.name} style={{ background: "#0f172a" }}>
-                            {aw.name}
+                          <option key={`pin-${aw.id}`} value={aw.name} style={{ background: "#0f172a" }}>
+                            ★ {aw.name}
                           </option>
                         ))}
-                        {["Claude", "Copilot", "Visual Studio Code", "YouTube", "Spotify", "Chrome", "AccuWeather", "DiscoClaro"]
-                          .filter((n) => !(config.appWidgets ?? []).some((w) => w.name.toLowerCase() === n.toLowerCase()))
+                        {Array.from(
+                          new Map(
+                            [
+                              ...installedApps.map((a) => a.name),
+                              "Claude",
+                              "Copilot",
+                              "Visual Studio Code",
+                              "YouTube",
+                              "Spotify",
+                              "Chrome",
+                              "AccuWeather",
+                              "DiscoClaro",
+                            ]
+                              .filter(
+                                (n) =>
+                                  n &&
+                                  !(config.appWidgets ?? []).some(
+                                    (w) => w.name.toLowerCase() === n.toLowerCase(),
+                                  ),
+                              )
+                              .map((n) => [n.toLowerCase(), n] as const),
+                          ).values(),
+                        )
+                          .sort((a, b) => a.localeCompare(b, "es"))
                           .map((n) => (
-                            <option key={n} value={n} style={{ background: "#0f172a" }}>
+                            <option key={`app-${n}`} value={n} style={{ background: "#0f172a" }}>
                               {n}
                             </option>
                           ))}
