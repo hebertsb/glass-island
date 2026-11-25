@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 const api = {
   set_ignore_mouse: (ignore) => ipcRenderer.invoke("island:set-ignore-mouse", ignore),
@@ -57,6 +57,14 @@ const api = {
   save_config: (data) => ipcRenderer.invoke("island:save-config", data),
   get_auto_start: () => ipcRenderer.invoke("island:get-auto-start"),
   set_auto_start: (enabled) => ipcRenderer.invoke("island:set-auto-start", enabled),
+  quick_control: (action) => ipcRenderer.invoke("island:quick-control", action),
+  get_file_path: (file) => {
+    try {
+      return webUtils.getPathForFile(file) || "";
+    } catch {
+      return "";
+    }
+  },
   quit_app: () => ipcRenderer.invoke("island:quit"),
 };
 

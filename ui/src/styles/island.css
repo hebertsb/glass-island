@@ -1038,3 +1038,73 @@ body,
     opacity: 0.85;
   }
 }
+
+/* Notch colapsado vivo cuando suena música (mini-portada + ecualizador) */
+.notch-mini-cover {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.notch-eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.notch-eq i {
+  display: block;
+  width: 2.5px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #38bdf8, #a78bfa);
+  animation: notch-eq-bounce 0.62s ease-in-out infinite alternate;
+}
+
+.notch-eq i:nth-child(1) { height: 7px; animation-delay: 0s; }
+.notch-eq i:nth-child(2) { height: 13px; animation-delay: 0.14s; }
+.notch-eq i:nth-child(3) { height: 9px; animation-delay: 0.28s; }
+.notch-eq i:nth-child(4) { height: 12px; animation-delay: 0.08s; }
+
+@keyframes notch-eq-bounce {
+  0% { transform: scaleY(0.32); opacity: 0.7; }
+  100% { transform: scaleY(1); opacity: 1; }
+}
+
+/* Centro de Control estilo iOS + Dropzone Shelf */
+.cc-tile {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8fafc;
+  border-radius: 11px;
+  padding: 6px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.18s ease, transform 0.14s ease;
+  text-align: center;
+}
+
+.cc-tile:hover {
+  background: rgba(56, 189, 248, 0.22);
+  border-color: rgba(56, 189, 248, 0.45);
+  transform: translateY(-1px);
+}
+
+.cc-power-bar {
+  display: inline-flex;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  padding: 2px;
+  border-radius: 999px;
+}
+
+.shelf-dropzone--over {
+  outline: 1.5px solid rgba(56, 189, 248, 0.7);
+  border-radius: 12px;
+}

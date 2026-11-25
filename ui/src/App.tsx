@@ -301,14 +301,77 @@ function formatBytesShort(bytes: number): string {
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
+function Sparkline({
+  values,
+  color = "#38bdf8",
+  width = 76,
+  height = 22,
+}: {
+  values: number[];
+  color?: string;
+  width?: number;
+  height?: number;
+}) {
+  const pts = values.length > 1 ? values : [0, values[0] ?? 0];
+  const max = Math.max(100, ...pts);
+  const step = width / Math.max(1, pts.length - 1);
+  const coords = pts
+    .map((v, i) => {
+      const x = Math.round(i * step * 10) / 10;
+      const y = Math.round((height - 2 - (Math.max(0, v) / max) * (height - 4)) * 10) / 10;
+      return `${x},${y}`;
+    })
+    .join(" ");
+  const areaCoords = `0,${height} ${coords} ${width},${height}`;
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden="true" style={{ display: "block", overflow: "visible" }}>
+      <polygon points={areaCoords} fill={color} opacity="0.16" />
+      <polyline
+        points={coords}
+        fill="none"
+        stroke={color}
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function getFaviconUrl(target: string): string | null {
+  try {
+    if (!/^https?:\/\//i.test(target)) return null;
+    const u = new URL(target);
+    if (u.hostname === "127.0.0.1" || u.hostname === "localhost") return null;
+    return `https://www.google.com/s2/favicons?sz=64&domain=${encodeURIComponent(u.hostname)}`;
+  } catch {
+    return null;
+  }
+}
+
+function formatNetSpeed(kbps = 0): string {
+  if (kbps >= 1024) return `${(kbps / 1024).toFixed(1)} MB/s`;
+  return `${Math.round(kbps)} KB/s`;
+}
+
 function getDimensions(
   shape: IslandShape,
   expanded: boolean,
   autoHide: boolean,
   extraHeight = 0,
+  musicLive = false,
 ): { w: number; h: number; margin: number; radius: number; notchTop: boolean } {
   const isNotch = shape === "notch";
   if (!expanded) {
+    if (musicLive && (shape === "notch" || shape === "slim" || shape === "pill")) {
+      return {
+        w: 228,
+        h: 36,
+        margin: shape === "notch" ? 0 : 6,
+        radius: 18,
+        notchTop: isNotch,
+      };
+    }
     if (autoHide && (shape === "notch" || shape === "slim")) {
       // Pestaña elegante pegada al borde superior con carita bien visible y proporcional
       return { w: 168, h: 34, margin: 0, radius: 17, notchTop: true };
@@ -486,7 +549,13 @@ export default function App() {
     battery_mins_left: null,
     disk_c_free_gb: 129,
     disk_c_percent: 74,
+    net_down_kbps: 0,
+    net_up_kbps: 0,
   });
+  const [cpuHistory, setCpuHistory] = useState<number[]>([12, 16, 14, 18, 15, 17]);
+  const [ramHistory, setRamHistory] = useState<number[]>([48, 50, 51, 52, 51, 52]);
+  const [shelfDragOver, setShelfDragOver] = useState(false);
+  const [powerPlan, setPowerPlan] = useState<"power_saver" | "power_balanced" | "power_high">("power_balanced");
   const [nowPlaying, setNowPlaying] = useState<NowPlayingData>(() => {
     try {
       const saved = localStorage.getItem("glassisland.lastTrack.v1");
@@ -577,7 +646,14 @@ export default function App() {
     const poll = () => {
       const api = getBridge();
       if (!api) return;
-      api.get_telemetry().then(setTelemetry).catch(() => {});
+      api
+        .get_telemetry()
+        .then((t) => {
+          setTelemetry(t);
+          setCpuHistory((prev) => [...prev.slice(-21), Math.round(t.cpu_percent || 0)]);
+          setRamHistory((prev) => [...prev.slice(-21), Math.round(t.ram_percent || 0)]);
+        })
+        .catch(() => {});
       api
         .get_now_playing()
         .then((np) => {
@@ -1372,7 +1448,13 @@ export default function App() {
     expanded && subuOpen
       ? 98 + (subuReply ? 42 : 0) + (folderChoices.length > 0 || unknownPhrase ? 54 : 0)
       : 0;
-  const dims = getDimensions(config.shape, expanded, config.autoHide, voiceExtraH);
+  const dims = getDimensions(
+    config.shape,
+    expanded,
+    config.autoHide,
+    voiceExtraH,
+    nowPlaying.playing,
+  );
   const stageClass =
     config.anchor === "bottom-center"
       ? "island-stage island-stage--bottom"
@@ -1394,20 +1476,42 @@ export default function App() {
 
       <div className="island-content">
         {!expanded ? (
-          /* ================= ESTADO COLAPSADO ULTRA-SUTIL (SOLO OJITOS) ================= */
+          /* ================= ESTADO COLAPSADO (OJITOS + MINI PORTADA Y ECUALIZADOR SI SUENA MÚSICA) ================= */
           <div
             className={`island-collapsed${config.shape === "vertical" ? " island-collapsed--vertical" : ""}`}
-            style={{ justifyContent: "center", padding: "0 8px" }}
+            style={{
+              justifyContent: nowPlaying.playing && config.shape !== "vertical" ? "space-between" : "center",
+              padding: nowPlaying.playing && config.shape !== "vertical" ? "0 11px" : "0 8px",
+            }}
             onClick={openIslandWithGesture}
-            title="Acércate o haz clic para extender GlassIsland"
+            title={
+              nowPlaying.playing
+                ? `Sonando: ${nowPlaying.title} — Clic para abrir GlassIsland`
+                : "Acércate o haz clic para extender GlassIsland"
+            }
           >
+            {nowPlaying.playing && config.shape !== "vertical" && (
+              <img
+                src={nowPlaying.cover || musicSunsetArt}
+                alt=""
+                className="notch-mini-cover"
+              />
+            )}
             <RobotFace
               mood={effectiveMood}
               color={config.robotColor}
-              size="md"
+              size={nowPlaying.playing ? "sm" : "md"}
               showMouth={config.showMouth}
               speaking={speaking}
             />
+            {nowPlaying.playing && config.shape !== "vertical" && (
+              <span className="notch-eq" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+                <i />
+              </span>
+            )}
           </div>
         ) : (
           /* ================= ESTADO EXPANDIDO ================= */
@@ -2507,16 +2611,73 @@ export default function App() {
               )}
 
               {activeTab === "shelf" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <div
+                  className={`shelf-dropzone${shelfDragOver ? " shelf-dropzone--over" : ""}`}
+                  style={{ display: "flex", flexDirection: "column", gap: 6 }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (!shelfDragOver) setShelfDragOver(true);
+                  }}
+                  onDragLeave={(e) => {
+                    e.preventDefault();
+                    setShelfDragOver(false);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setShelfDragOver(false);
+                    const api = getBridge();
+                    const dropped = Array.from(e.dataTransfer?.files || []);
+                    if (dropped.length === 0) return;
+                    const additions = dropped
+                      .map((file) => {
+                        const fullPath =
+                          api?.get_file_path?.(file) ||
+                          (file as unknown as { path?: string }).path ||
+                          "";
+                        return fullPath
+                          ? { path: fullPath, name: file.name, size_bytes: file.size || 0 }
+                          : null;
+                      })
+                      .filter((x): x is { path: string; name: string; size_bytes: number } => Boolean(x));
+                    if (additions.length === 0) return;
+                    setConfig((p) => {
+                      const existing = new Set(p.shelfFiles.map((x) => x.path));
+                      const merged = [...p.shelfFiles];
+                      for (const item of additions) {
+                        if (!existing.has(item.path)) {
+                          existing.add(item.path);
+                          merged.unshift(item);
+                        }
+                      }
+                      return { ...p, shelfFiles: merged };
+                    });
+                    playDoneChime(config.hudSounds !== false);
+                  }}
+                >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span className="tile-kicker">ESTANTE DE ARCHIVOS ({config.shelfFiles.length})</span>
+                    <span className="tile-kicker">
+                      ESTANTE DE ARCHIVOS ({config.shelfFiles.length}) · ARRASTRA Y SUELTA AQUÍ
+                    </span>
                     <button type="button" className="glass-btn glass-btn--white" onClick={handleAddShelfFiles}>
                       <Plus size={12} /> Añadir archivos
                     </button>
                   </div>
                   {config.shelfFiles.length === 0 ? (
-                    <div className="tile-sub" style={{ padding: "14px 0", textAlign: "center" }}>
-                      Guarda aquí PDFs, imágenes o documentos frecuentes para abrirlos en 1 clic.
+                    <div
+                      className="tile-sub"
+                      style={{
+                        padding: "18px 10px",
+                        textAlign: "center",
+                        border: "1.5px dashed rgba(255,255,255,0.22)",
+                        borderRadius: 12,
+                        background: shelfDragOver ? "rgba(56,189,248,0.16)" : "rgba(255,255,255,0.03)",
+                      }}
+                    >
+                      {shelfDragOver
+                        ? "✨ Suelta los archivos aquí para guardarlos en el estante"
+                        : "📂 Arrastra y suelta cualquier archivo desde tu Escritorio aquí o pulsa «Añadir archivos»."}
                     </div>
                   ) : (
                     config.shelfFiles.map((f) => (
@@ -2675,63 +2836,146 @@ export default function App() {
 
               {activeTab === "system" && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                  {/* Telemetría en vivo con Sparklines SVG + Velocidad de Red */}
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
-                    <div className="glass-card-row" style={{ flexDirection: "column", alignItems: "flex-start" }}>
-                      <span className="tile-kicker">CPU</span>
-                      <strong style={{ fontSize: 15 }}>{telemetry.cpu_percent}%</strong>
+                    <div className="glass-card-row" style={{ justifyContent: "space-between", gap: 6 }}>
+                      <div style={{ display: "flex", flexDirection: "column" }}>
+                        <span className="tile-kicker">CPU</span>
+                        <strong style={{ fontSize: 15, color: "#38bdf8" }}>{telemetry.cpu_percent}%</strong>
+                      </div>
+                      <Sparkline values={cpuHistory} color="#38bdf8" width={72} height={24} />
                     </div>
-                    <div className="glass-card-row" style={{ flexDirection: "column", alignItems: "flex-start" }}>
-                      <span className="tile-kicker">RAM</span>
-                      <strong style={{ fontSize: 15 }}>{telemetry.ram_used_gb}/{telemetry.ram_total_gb} GB</strong>
+                    <div className="glass-card-row" style={{ justifyContent: "space-between", gap: 6 }}>
+                      <div style={{ display: "flex", flexDirection: "column" }}>
+                        <span className="tile-kicker">RAM</span>
+                        <strong style={{ fontSize: 13.5, color: "#c084fc" }}>
+                          {telemetry.ram_used_gb}/{telemetry.ram_total_gb}G
+                        </strong>
+                      </div>
+                      <Sparkline values={ramHistory} color="#c084fc" width={64} height={24} />
                     </div>
-                    <div className="glass-card-row" style={{ flexDirection: "column", alignItems: "flex-start" }}>
-                      <span className="tile-kicker">
-                        <BatteryCharging size={11} /> BATERÍA
+                    <div className="glass-card-row" style={{ flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
+                      <span className="tile-kicker" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        <BatteryCharging size={11} /> {telemetry.battery_percent}% · RED
                       </span>
-                      <strong style={{ fontSize: 15 }}>{telemetry.battery_percent}%</strong>
+                      <span style={{ fontSize: 10.5, fontFamily: "ui-monospace, monospace", opacity: 0.92 }}>
+                        ↓ {formatNetSpeed(telemetry.net_down_kbps)} · ↑ {formatNetSpeed(telemetry.net_up_kbps)}
+                      </span>
                     </div>
                   </div>
 
-                  {/* Slider de Brillo fluido (worker persistente <15ms) */}
-                  <div className="glass-card-row">
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, minWidth: 88 }}>
-                      <Sun size={13} /> Brillo <strong>{brightness}%</strong>
-                    </span>
-                    <input
-                      type="range"
-                      min={10}
-                      max={100}
-                      value={brightness}
-                      onChange={(e) => {
-                        const v = Number(e.target.value);
-                        setBrightness(v);
-                        getBridge()?.set_brightness(v).catch(() => {});
-                      }}
-                      style={{ flex: 1, accentColor: "#38bdf8", cursor: "pointer" }}
-                    />
+                  {/* Centro de Control rápido estilo iOS (Brillo + Volumen + Wi-Fi/BT/Night Light + Energía) */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1.25fr 1fr", gap: 6 }}>
+                    <div className="glass-card-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 6 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, minWidth: 74 }}>
+                          <Sun size={12} /> Brillo <strong>{brightness}%</strong>
+                        </span>
+                        <input
+                          type="range"
+                          min={10}
+                          max={100}
+                          value={brightness}
+                          onChange={(e) => {
+                            const v = Number(e.target.value);
+                            setBrightness(v);
+                            getBridge()?.set_brightness(v).catch(() => {});
+                          }}
+                          style={{ flex: 1, accentColor: "#38bdf8", cursor: "pointer" }}
+                        />
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 5 }}>
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
+                          <Volume2 size={12} /> Volumen
+                        </span>
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <button type="button" className="icon-chip" onClick={() => getBridge()?.media_control("vol_down").catch(() => {})}>
+                            −
+                          </button>
+                          <button type="button" className="icon-chip" onClick={() => getBridge()?.media_control("vol_mute").catch(() => {})}>
+                            🔇
+                          </button>
+                          <button type="button" className="icon-chip" onClick={() => getBridge()?.media_control("vol_up").catch(() => {})}>
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 5 }}>
+                      <button
+                        type="button"
+                        className="cc-tile"
+                        onClick={() => getBridge()?.quick_control("wifi").catch(() => {})}
+                      >
+                        📶 Wi-Fi
+                      </button>
+                      <button
+                        type="button"
+                        className="cc-tile"
+                        onClick={() => getBridge()?.quick_control("bluetooth").catch(() => {})}
+                      >
+                        🔷 Bluetooth
+                      </button>
+                      <button
+                        type="button"
+                        className="cc-tile"
+                        onClick={() => getBridge()?.quick_control("nightlight").catch(() => {})}
+                      >
+                        🌙 Luz noct.
+                      </button>
+                      <button
+                        type="button"
+                        className="cc-tile"
+                        onClick={() => getBridge()?.system_action("screenshot").catch(() => {})}
+                      >
+                        📸 Captura
+                      </button>
+                    </div>
                   </div>
 
-                  {/* Expresiones de los ojitos */}
-                  <div className="glass-card-row" style={{ flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 11, opacity: 0.8 }}>Expresión:</span>
-                    {(
-                      [
-                        ["idle", "Normal"],
-                        ["happy", "Feliz ◠ ◠"],
-                        ["wink", "Guiño"],
-                        ["angry", "Enojado"],
-                        ["sleepy", "Sueño"],
-                      ] as [RobotMood, string][]
-                    ).map(([m, label]) => (
-                      <button
-                        key={m}
-                        type="button"
-                        className={`icon-chip${manualMood === m ? " icon-chip--active" : ""}`}
-                        onClick={() => setManualMood((cur) => (cur === m ? null : m))}
-                      >
-                        {label}
-                      </button>
-                    ))}
+                  {/* Plan de energía + Expresiones del robot */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, flexWrap: "wrap" }}>
+                    <div className="cc-power-bar">
+                      {(
+                        [
+                          ["power_saver", "🔋 Ahorro"],
+                          ["power_balanced", "⚖️ Equilibrado"],
+                          ["power_high", "⚡ Rendimiento"],
+                        ] as const
+                      ).map(([plan, lbl]) => (
+                        <button
+                          key={plan}
+                          type="button"
+                          className={`icon-chip${powerPlan === plan ? " icon-chip--active" : ""}`}
+                          onClick={() => {
+                            setPowerPlan(plan);
+                            getBridge()?.quick_control(plan).catch(() => {});
+                          }}
+                        >
+                          {lbl}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                      {(
+                        [
+                          ["idle", "Normal"],
+                          ["happy", "◠ ◠"],
+                          ["wink", "Guiño"],
+                          ["angry", "Enojado"],
+                        ] as [RobotMood, string][]
+                      ).map(([m, label]) => (
+                        <button
+                          key={m}
+                          type="button"
+                          className={`icon-chip${manualMood === m ? " icon-chip--active" : ""}`}
+                          onClick={() => setManualMood((cur) => (cur === m ? null : m))}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
@@ -2786,23 +3030,53 @@ export default function App() {
                     </button>
                   </div>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(125px, 1fr))", gap: 6 }}>
-                    {config.shortcuts.map((sc) => (
-                      <div
-                        key={sc.id}
-                        className="glass-card-row"
-                        style={{
-                          cursor: "pointer",
-                          borderLeft: `3px solid ${sc.color}`,
-                        }}
-                        onClick={() => handleLaunch(sc.target)}
-                        title={sc.target}
-                      >
-                        <span style={{ fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {sc.emoji} {sc.name}
-                        </span>
-                      </div>
-                    ))}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 6 }}>
+                    {config.shortcuts.map((sc) => {
+                      const fav = sc.kind === "url" ? getFaviconUrl(sc.target) : null;
+                      const subLabel =
+                        sc.kind === "url"
+                          ? sc.target.replace(/^https?:\/\/(www\.)?/i, "").split("/")[0]
+                          : sc.kind === "folder"
+                            ? "Carpeta local"
+                            : "Aplicación";
+                      return (
+                        <div
+                          key={sc.id}
+                          className="glass-card-row"
+                          style={{
+                            cursor: "pointer",
+                            borderLeft: `3px solid ${sc.color}`,
+                            gap: 8,
+                            justifyContent: "flex-start",
+                          }}
+                          onClick={() => handleLaunch(sc.target)}
+                          title={sc.target}
+                        >
+                          {fav ? (
+                            <img
+                              src={fav}
+                              alt=""
+                              width={18}
+                              height={18}
+                              style={{ borderRadius: 5, flexShrink: 0, background: "rgba(255,255,255,0.08)" }}
+                              onError={(e) => {
+                                (e.currentTarget as HTMLImageElement).style.display = "none";
+                              }}
+                            />
+                          ) : (
+                            <span style={{ fontSize: 15, flexShrink: 0 }}>{sc.emoji}</span>
+                          )}
+                          <div style={{ minWidth: 0, display: "flex", flexDirection: "column" }}>
+                            <span style={{ fontSize: 11.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {sc.name}
+                            </span>
+                            <span style={{ fontSize: 9.5, opacity: 0.62, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {subLabel}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

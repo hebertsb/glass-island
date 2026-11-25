@@ -61,6 +61,8 @@ export interface TelemetryData {
   battery_mins_left: number | null;
   disk_c_free_gb: number;
   disk_c_percent: number;
+  net_down_kbps?: number;
+  net_up_kbps?: number;
 }
 
 export interface NowPlayingData {
@@ -367,6 +369,8 @@ export interface GlassIslandApi {
   save_config: (data: IslandConfig) => Promise<boolean>;
   get_auto_start: () => Promise<{ enabled: boolean }>;
   set_auto_start: (enabled: boolean) => Promise<{ ok: boolean; enabled: boolean }>;
+  quick_control: (action: string) => Promise<{ ok: boolean; plan?: string }>;
+  get_file_path: (file: File) => string;
   quit_app: () => Promise<void>;
 }
 

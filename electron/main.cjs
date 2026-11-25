@@ -347,7 +347,36 @@ app.whenReady().then(() => {
     return { anchor, x, y };
   });
 
+  // Velocidad de red en vivo (↓ KB/s, ↑ KB/s) usando netstat -e sin bloquear
+  let lastNetStats = null;
+  let cachedNetSpeed = { net_down_kbps: 0, net_up_kbps: 0 };
+  let netPollBusy = false;
+  function refreshNetSpeedAsync() {
+    if (netPollBusy) return;
+    netPollBusy = true;
+    execFile("netstat.exe", ["-e"], { windowsHide: true, timeout: 1500 }, (err, stdout) => {
+      netPollBusy = false;
+      if (err || !stdout) return;
+      const m = String(stdout).match(/Bytes\s+(\d+)\s+(\d+)/i);
+      if (!m) return;
+      const rx = Number(m[1]);
+      const tx = Number(m[2]);
+      const now = Date.now();
+      if (lastNetStats && now > lastNetStats.at) {
+        const dt = (now - lastNetStats.at) / 1000;
+        const down = Math.max(0, (rx - lastNetStats.rx) / 1024 / dt);
+        const up = Math.max(0, (tx - lastNetStats.tx) / 1024 / dt);
+        cachedNetSpeed = {
+          net_down_kbps: Math.round(down * 10) / 10,
+          net_up_kbps: Math.round(up * 10) / 10,
+        };
+      }
+      lastNetStats = { rx, tx, at: now };
+    });
+  }
+
   ipcMain.handle("island:get-telemetry", async () => {
+    refreshNetSpeedAsync();
     const extra = await getExtraFresh();
     const total = os.totalmem();
     const free = os.freemem();
@@ -362,7 +391,43 @@ app.whenReady().then(() => {
       battery_mins_left: null,
       disk_c_free_gb: extra.disk_c_free_gb,
       disk_c_percent: extra.disk_c_percent,
+      net_down_kbps: cachedNetSpeed.net_down_kbps,
+      net_up_kbps: cachedNetSpeed.net_up_kbps,
     };
+  });
+
+  ipcMain.handle("island:quick-control", async (_e, action) => {
+    const act = String(action || "").toLowerCase();
+    try {
+      if (act === "wifi") {
+        await shell.openExternal("ms-settings:network-wifi");
+        return { ok: true };
+      }
+      if (act === "bluetooth") {
+        await shell.openExternal("ms-settings:bluetooth");
+        return { ok: true };
+      }
+      if (act === "nightlight") {
+        await shell.openExternal("ms-settings:nightlight");
+        return { ok: true };
+      }
+      if (act === "sound") {
+        await shell.openExternal("ms-settings:sound");
+        return { ok: true };
+      }
+      const plans = {
+        power_saver: "a1841308-3541-4fab-bc81-f71556f20b4a",
+        power_balanced: "381b4222-f694-41f0-9685-ff5bb260df2e",
+        power_high: "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c",
+      };
+      if (plans[act]) {
+        execFile("powercfg.exe", ["/setactive", plans[act]], { windowsHide: true }, () => {});
+        return { ok: true, plan: act };
+      }
+      return { ok: false };
+    } catch {
+      return { ok: false };
+    }
   });
 
   ipcMain.handle("island:get-now-playing", async () => {
