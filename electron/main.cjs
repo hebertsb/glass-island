@@ -416,13 +416,15 @@ app.whenReady().then(() => {
         return { ok: true };
       }
       const plans = {
-        power_saver: "a1841308-3541-4fab-bc81-f71556f20b4a",
-        power_balanced: "381b4222-f694-41f0-9685-ff5bb260df2e",
-        power_high: "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c",
+        power_saver: { guid: "a1841308-3541-4fab-bc81-f71556f20b4a", brightness: 45 },
+        power_balanced: { guid: "381b4222-f694-41f0-9685-ff5bb260df2e", brightness: 75 },
+        power_high: { guid: "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c", brightness: 95 },
       };
       if (plans[act]) {
-        execFile("powercfg.exe", ["/setactive", plans[act]], { windowsHide: true }, () => {});
-        return { ok: true, plan: act };
+        const cfg = plans[act];
+        execFile("powercfg.exe", ["/setactive", cfg.guid], { windowsHide: true }, () => {});
+        setBrightnessSmooth(cfg.brightness);
+        return { ok: true, plan: act, brightness: cfg.brightness };
       }
       return { ok: false };
     } catch {

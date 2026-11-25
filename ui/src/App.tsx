@@ -1116,7 +1116,15 @@ export default function App() {
 
   useEffect(() => {
     expandedRef.current = expanded;
-  }, [expanded]);
+    if (expanded && activeTab === "system") {
+      getBridge()
+        ?.get_brightness()
+        .then((realB) => {
+          if (typeof realB === "number" && realB >= 5) setBrightness(realB);
+        })
+        .catch(() => {});
+    }
+  }, [expanded, activeTab]);
 
   useEffect(() => {
     configRef.current = config;
@@ -2939,18 +2947,36 @@ export default function App() {
                     <div className="cc-power-bar">
                       {(
                         [
-                          ["power_saver", "🔋 Ahorro"],
-                          ["power_balanced", "⚖️ Equilibrado"],
-                          ["power_high", "⚡ Rendimiento"],
+                          ["power_saver", "🔋 Ahorro", 45],
+                          ["power_balanced", "⚖️ Equilibrado", 75],
+                          ["power_high", "⚡ Rendimiento", 95],
                         ] as const
-                      ).map(([plan, lbl]) => (
+                      ).map(([plan, lbl, targetBright]) => (
                         <button
                           key={plan}
                           type="button"
                           className={`icon-chip${powerPlan === plan ? " icon-chip--active" : ""}`}
                           onClick={() => {
                             setPowerPlan(plan);
-                            getBridge()?.quick_control(plan).catch(() => {});
+                            setBrightness(targetBright);
+                            getBridge()
+                              ?.quick_control(plan)
+                              .then((res) => {
+                                if (typeof res?.brightness === "number") {
+                                  setBrightness(res.brightness);
+                                }
+                                window.setTimeout(() => {
+                                  getBridge()
+                                    ?.get_brightness()
+                                    .then((realB) => {
+                                      if (typeof realB === "number" && realB >= 5) {
+                                        setBrightness(realB);
+                                      }
+                                    })
+                                    .catch(() => {});
+                                }, 450);
+                              })
+                              .catch(() => {});
                           }}
                         >
                           {lbl}

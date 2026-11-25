@@ -369,7 +369,7 @@ export interface GlassIslandApi {
   save_config: (data: IslandConfig) => Promise<boolean>;
   get_auto_start: () => Promise<{ enabled: boolean }>;
   set_auto_start: (enabled: boolean) => Promise<{ ok: boolean; enabled: boolean }>;
-  quick_control: (action: string) => Promise<{ ok: boolean; plan?: string }>;
+  quick_control: (action: string) => Promise<{ ok: boolean; plan?: string; brightness?: number }>;
   get_file_path: (file: File) => string;
   quit_app: () => Promise<void>;
 }
