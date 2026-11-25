@@ -422,8 +422,14 @@ app.whenReady().then(() => {
       };
       if (plans[act]) {
         const cfg = plans[act];
-        execFile("powercfg.exe", ["/setactive", cfg.guid], { windowsHide: true }, () => {});
-        setBrightnessSmooth(cfg.brightness);
+        await new Promise((resolve) => {
+          execFile("powercfg.exe", ["/setactive", cfg.guid], { windowsHide: true, timeout: 3000 }, () =>
+            resolve(),
+          );
+        });
+        // Espera 150ms a que Windows aplique el perfil y luego fija el brillo real por WMI para que Windows no lo sobreescriba
+        await new Promise((r) => setTimeout(r, 150));
+        await callBridge({ cmd: "brightness", level: cfg.brightness }, 2500).catch(() => {});
         return { ok: true, plan: act, brightness: cfg.brightness };
       }
       return { ok: false };

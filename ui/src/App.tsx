@@ -2965,16 +2965,6 @@ export default function App() {
                                 if (typeof res?.brightness === "number") {
                                   setBrightness(res.brightness);
                                 }
-                                window.setTimeout(() => {
-                                  getBridge()
-                                    ?.get_brightness()
-                                    .then((realB) => {
-                                      if (typeof realB === "number" && realB >= 5) {
-                                        setBrightness(realB);
-                                      }
-                                    })
-                                    .catch(() => {});
-                                }, 450);
                               })
                               .catch(() => {});
                           }}
