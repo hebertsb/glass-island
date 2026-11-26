@@ -353,9 +353,12 @@ export function extractWakeCommand(
     const mGreetNoVa = q.match(greetNoVa);
     if (mGreetNoVa) return { matched: true, command: (mGreetNoVa[1] || "").trim() };
 
-    const bareNoVa = q.match(/^no va\b\s+(.+)$/);
-    if (bareNoVa && COMMAND_HINT_RE.test(bareNoVa[1].trim())) {
-      return { matched: true, command: bareNoVa[1].trim() };
+    const bareNoVa = q.match(/^no va\b\s+(?:a\s+)?(.+)$/);
+    if (bareNoVa) {
+      const rest = bareNoVa[1].trim();
+      if (COMMAND_HINT_RE.test(rest) || /^(?:pasar|mover|traer|abrir|cerrar|poner|buscar|crear)\b/.test(rest)) {
+        return { matched: true, command: rest };
+      }
     }
     return { matched: false, command: rawText };
   }
@@ -795,22 +798,27 @@ export async function executeSubuCommand(
   }
 
   // 0e2. Tool: Mover ventana entre Pantalla Principal (1) y Secundaria (2)
+  // Soporta: "trae Chrome a mi pantalla 1", "pasa Chrome a la pantalla uno", "pasaron a la pantalla 1", "mueve esta ventana al monitor 2"
   const moveWinMatch = q.match(
-    /^(?:pasa|pasame|mueve|moveme|trae|traeme|lleva|pon)\s+(?:la\s+ventana\s+de\s+|la\s+ventana\s+|esta\s+ventana|esta\s+app|(.+?))?\s*(?:a\s+la|al)\s+(pantalla\s+principal|pantalla\s+1|monitor\s+1|pantalla\s+secundaria|pantalla\s+2|monitor\s+2|otro\s+monitor|otra\s+pantalla)$/,
+    /^(?:(?:a\s+)?(?:pasa|pasame|pasar|pasaron|mueve|moveme|mover|trae|traeme|traer|lleva|pon))\s+(?:(?:la\s+ventana\s+de\s+|la\s+ventana\s+|esta\s+ventana|esta\s+app|(.+?))\s+)?(?:a\s+la|a\s+mi|al|para\s+la|hacia\s+la)\s+(pantalla\s+principal|pantalla\s+1|pantalla\s+uno|monitor\s+1|monitor\s+uno|pantalla\s+secundaria|pantalla\s+2|pantalla\s+dos|monitor\s+2|monitor\s+dos|otro\s+monitor|otra\s+pantalla)$/,
   );
   if (moveWinMatch) {
-    const rawHint = (moveWinMatch[1] || "").replace(/^(?:esta\s+ventana|esta\s+app|esto|eso)$/, "").trim();
+    let rawHint = (moveWinMatch[1] || "")
+      .replace(/^(?:la\s+ventana\s+de\s+|la\s+app\s+de\s+|esta\s+ventana|esta\s+app|esto|eso)$/g, "")
+      .trim();
+    if (/^(?:google|google chrome|chrome|crome)$/i.test(rawHint)) rawHint = "chrome";
+    else if (/^(?:vs code|vscode|visual studio code|visual studio|code)$/i.test(rawHint)) rawHint = "Code";
     const dest = moveWinMatch[2] || "";
-    const targetDisplay: "primary" | "secondary" = /principal|1/.test(dest) ? "primary" : "secondary";
+    const targetDisplay: "primary" | "secondary" = /principal|\b1\b|\buno\b/.test(dest) ? "primary" : "secondary";
     const res = await api?.move_window_display?.(rawHint, targetDisplay);
     return res?.ok
       ? { ok: true, reply: `Listo, pasé ${res.title || "la ventana"} a tu ${res.target}.` }
       : { ok: false, reply: "No encontré una ventana abierta para mover de pantalla." };
   }
 
-  // 0e3. Tool: Abrir archivos recientes sin saber la ruta exacta ("abre el último PDF que descargué", "abre la última captura")
+  // 0e3. Tool: Abrir archivos recientes sin saber la ruta exacta ("abre el último PDF que descargué", "abre la última captura", "abre la última")
   const recentFileMatch = q.match(
-    /^(?:abre|abrir|abreme|abrime|mostrame)\s+(?:el|la)\s+(?:ultimo|ultima|reciente)\s+(?:archivo|documento|pdf|video|foto|imagen|captura|word|excel|informe)\b(.*)$/,
+    /^(?:abre|abrir|abreme|abrime|mostrame)\s+(?:el|la)\s+(?:ultimo|ultima|reciente)(?:\s+(?:archivo|documento|pdf|video|foto|imagen|captura|word|excel|informe)\b.*)?$/,
   );
   if (recentFileMatch || /^(?:abre|abrir|abreme|abrime)\s+(?:el\s+archivo|el\s+documento|el\s+pdf|el\s+informe)\s+(.+)$/.test(q)) {
     const res = await api?.open_recent_file?.(q);
@@ -1649,8 +1657,9 @@ export async function executeSubuCommand(
   }
 
   // 10. Abrir / Ejecutar cualquier app o sitio web (con cruceño: abrime, entrame, mostrame, abrile)
+  const wantsNewWindow = /\b(?:nueva\s+ventana|otra\s+ventana|ventana\s+nueva)\b/.test(q);
   const openMatch = q.match(
-    /^(?:abre|abrir|abreme|abrime|abrile|ejecuta|ejecutame|ejecutar|inicia|iniciame|iniciar|lanza|lanzame|entra|entrame|entra a|meteme a|mostrame|muestrame|pon|ponme|poneme)\s+(?:la\s+app\s+|el\s+programa\s+|la\s+pagina\s+)?(.+)$/,
+    /^(?:abre|abrir|abreme|abrime|abrile|ejecuta|ejecutame|ejecutar|inicia|iniciame|iniciar|lanza|lanzame|entra|entrame|entra a|meteme a|mostrame|muestrame|pon|ponme|poneme)\s+(?:una\s+nueva\s+ventana\s+de\s+|otra\s+ventana\s+de\s+|la\s+app\s+|el\s+programa\s+|la\s+pagina\s+)?(.+)$/,
   );
   const targetQuery = (openMatch ? openMatch[1] : q).trim();
 
@@ -1696,11 +1705,11 @@ export async function executeSubuCommand(
         (norm(a.name).includes(canonical) || norm(a.processName).includes(canonical)),
     );
   if (matchedInstalled) {
-    // Si es Visual Studio Code, prioriza traer al frente la ventana ya abierta en lugar de abrir una vacía
-    if (/visual studio code|^code$/i.test(matchedInstalled.name) || /^code$/i.test(matchedInstalled.processName)) {
-      const focused = await api?.focus_app?.("Code").catch(() => ({ ok: false }));
+    // Si NO pidió explícitamente "nueva ventana", prioriza traer al frente la ventana YA abierta (VS Code, Chrome, etc.)
+    if (!wantsNewWindow && matchedInstalled.processName && /^(?:Code|chrome|msedge|brave|Spotify|WhatsApp)$/i.test(matchedInstalled.processName)) {
+      const focused = await api?.focus_app?.(matchedInstalled.processName).catch(() => ({ ok: false }));
       if (focused?.ok) {
-        return { ok: true, reply: "¡Claro! Poniendo Visual Studio Code en primer plano." };
+        return { ok: true, reply: `¡Claro! Poniendo ${matchedInstalled.name} en primer plano.` };
       }
     }
     await api?.launch(matchedInstalled.lnkPath || matchedInstalled.exePath);
