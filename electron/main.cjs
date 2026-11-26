@@ -800,23 +800,55 @@ app.whenReady().then(() => {
         fs.mkdirSync(shotsDir, { recursive: true });
         const filePath = path.join(shotsDir, `Nova_${Date.now()}.png`);
         const safePath = filePath.replace(/'/g, "''");
-        await new Promise((resolve) => {
-          const psShot =
-            `Add-Type -AssemblyName System.Windows.Forms,System.Drawing; ` +
-            `$b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; ` +
-            `$bmp=New-Object System.Drawing.Bitmap($b.Width,$b.Height); ` +
-            `$g=[System.Drawing.Graphics]::FromImage($bmp); ` +
-            `$g.CopyFromScreen($b.Location,[System.Drawing.Point]::Empty,$b.Size); ` +
-            `$bmp.Save('${safePath}',[System.Drawing.Imaging.ImageFormat]::Png); ` +
-            `$g.Dispose(); $bmp.Dispose()`;
-          execFile(
-            PS_EXE,
-            ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", psShot],
-            { windowsHide: true, timeout: 4000 },
-            () => resolve(),
-          );
-        });
-        return { ok: true, path: filePath, message: "Captura guardada en Imágenes." };
+        // Oculta brevemente la isla para que la captura salga limpia sin el panel encima
+        if (win && !win.isDestroyed()) {
+          try {
+            win.setOpacity(0);
+          } catch {
+            // ignore
+          }
+          await new Promise((r) => setTimeout(r, 90));
+        }
+        try {
+          await new Promise((resolve) => {
+            const psShot =
+              `Add-Type -AssemblyName System.Windows.Forms,System.Drawing; ` +
+              `$b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; ` +
+              `$bmp=New-Object System.Drawing.Bitmap($b.Width,$b.Height); ` +
+              `$g=[System.Drawing.Graphics]::FromImage($bmp); ` +
+              `$g.CopyFromScreen($b.Location,[System.Drawing.Point]::Empty,$b.Size); ` +
+              `$bmp.Save('${safePath}',[System.Drawing.Imaging.ImageFormat]::Png); ` +
+              `$g.Dispose(); $bmp.Dispose()`;
+            execFile(
+              PS_EXE,
+              ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", psShot],
+              { windowsHide: true, timeout: 4000 },
+              () => resolve(),
+            );
+          });
+        } finally {
+          if (win && !win.isDestroyed()) {
+            try {
+              win.setOpacity(1);
+            } catch {
+              // ignore
+            }
+          }
+        }
+        // Copia la imagen directamente al portapapeles de Windows para poder pegarla con Ctrl+V al instante
+        try {
+          if (fs.existsSync(filePath)) {
+            const shotImg = nativeImage.createFromPath(filePath);
+            if (!shotImg.isEmpty()) clipboard.writeImage(shotImg);
+          }
+        } catch {
+          // ignore
+        }
+        return {
+          ok: fs.existsSync(filePath),
+          path: filePath,
+          message: "Captura guardada en Imágenes y copiada al portapapeles.",
+        };
       }
       return { ok: false };
     } catch (err) {
