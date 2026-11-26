@@ -138,6 +138,16 @@ _EN_PHONETICS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\baccuweather\b", re.I), "ákiu wéder"),
     (re.compile(r"\bvisual\s+studio\s+code\b", re.I), "víshual stúdio cóud"),
     (re.compile(r"\bvs\s*code\b", re.I), "vi es cóud"),
+    (re.compile(r"\bcode\b", re.I), "cóud"),
+    (re.compile(r"\bgoogle\s+chrome\b", re.I), "gúgol croum"),
+    (re.compile(r"\bchrome\b", re.I), "croum"),
+    (re.compile(r"\bgoogle\b", re.I), "gúgol"),
+    (re.compile(r"\bglassdrop\b", re.I), "glas drop"),
+    (re.compile(r"\bglassisland\b", re.I), "glas áiland"),
+    (re.compile(r"\bdiscoclaro\b", re.I), "disco claro"),
+    (re.compile(r"\bwi-?fi\b", re.I), "uái fái"),
+    (re.compile(r"\bbluetooth\b", re.I), "blutút"),
+    (re.compile(r"\bjarvis\b", re.I), "yárvis"),
     (re.compile(r"\bgithub\b", re.I), "guítjab"),
     (re.compile(r"\bwhatsapp\b", re.I), "guátsap"),
     (re.compile(r"\benterprise\s+architect\b", re.I), "énterprais árquitect"),
@@ -147,34 +157,43 @@ _EN_PHONETICS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\bdocker\b", re.I), "dóker"),
     (re.compile(r"\bscreenshot\b", re.I), "escrínshot"),
     (re.compile(r"\bfocus\b", re.I), "fóucus"),
+    (re.compile(r"\bhome\b", re.I), "joum"),
+    (re.compile(r"\bclips\b", re.I), "clips"),
     (re.compile(r"\bfrutiger\s+aero\b", re.I), "frútiguer áero"),
     (re.compile(r"\bliquid\s+glass\b", re.I), "lícuid glas"),
 ]
 
 
 def _prepare_tts_text(text: str, voice: str) -> str:
-    # Las voces MultilingualNeural pronuncian inglés y español nativamente solas
+    # Limpia símbolos visuales que cortan la lectura (↗, ·, ×, emojis sueltos)
+    out = re.sub(r"[↗↘↙↖•·|]", ", ", text)
+    out = re.sub(r"(\d+)\s*[×x]\s*(\d+)", r"\1 por \2", out)
+    out = re.sub(r"(\d+)\s*%", r"\1 por ciento", out)
+    out = re.sub(r"\s+", " ", out).strip()
     if "Multilingual" in voice:
-        return text
-    out = text
+        return out
     for pat, repl in _EN_PHONETICS:
         out = pat.sub(repl, out)
     return out
 
 
+# Prosodia 100% natural (+0% velocidad y +0Hz tono) para evitar recortes bruscos o voz metálica
 _VOICE_PROSODY: dict[str, tuple[str, str]] = {
-    "en-US-BrianMultilingualNeural": ("+3%", "-6Hz"),
-    "en-US-AndrewMultilingualNeural": ("+3%", "-3Hz"),
-    "en-US-EmmaMultilingualNeural": ("+2%", "+0Hz"),
-    "en-US-AvaMultilingualNeural": ("+2%", "+0Hz"),
-    "es-MX-JorgeNeural": ("+4%", "-4Hz"),
-    "es-BO-MarceloNeural": ("+4%", "-2Hz"),
+    "en-US-BrianMultilingualNeural": ("+0%", "-2Hz"),
+    "en-US-AndrewMultilingualNeural": ("+0%", "+0Hz"),
+    "en-US-EmmaMultilingualNeural": ("+0%", "+0Hz"),
+    "en-US-AvaMultilingualNeural": ("+0%", "+0Hz"),
+    "es-AR-TomasNeural": ("+0%", "+0Hz"),
+    "es-CO-GonzaloNeural": ("+0%", "+0Hz"),
+    "es-MX-JorgeNeural": ("+0%", "+0Hz"),
+    "es-BO-MarceloNeural": ("+0%", "+0Hz"),
+    "es-BO-SofiaNeural": ("+0%", "+0Hz"),
 }
 
 
 async def _synth_mp3_b64(text: str, voice: str) -> str:
     spoken = _prepare_tts_text(text, voice)
-    rate, pitch = _VOICE_PROSODY.get(voice, ("+5%", "+0Hz"))
+    rate, pitch = _VOICE_PROSODY.get(voice, ("+0%", "+0Hz"))
     communicate = edge_tts.Communicate(spoken, voice=voice, rate=rate, pitch=pitch)
     buf = io.BytesIO()
     async for chunk in communicate.stream():

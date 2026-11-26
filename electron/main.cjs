@@ -2416,7 +2416,9 @@ app.whenReady().then(() => {
     }
   });
 
-  ipcMain.handle("island:voice-speak", async (_e, text, voice, geminiApiKey, ttsStyle) => {
+  let geminiTtsCooldownUntil = 0;
+
+  ipcMain.handle("island:voice-speak", async (_e, text, voice, geminiApiKey) => {
     const cleanText = String(text || "").trim();
     const requestedVoice = String(voice || "en-US-EmmaMultilingualNeural");
     if (!cleanText) return { audio: "", voice: requestedVoice };
@@ -2447,36 +2449,28 @@ app.whenReady().then(() => {
           return { audio: cloned.audio, voice: requestedVoice, engine: "clone-offline" };
         }
       }
-      // Si aún no está el clonador local o ref_wav, usa voz latina grave como fallback instantáneo
       return await callVoice(
-        { cmd: "speak", text: cleanText, voice: "es-MX-JorgeNeural" },
+        { cmd: "speak", text: cleanText, voice: "es-CO-GonzaloNeural" },
         12000,
       );
     }
 
-    // 3) Gemini 2.5 Flash Pro TTS con TLS Keep-Alive + voz 100% fija + reintentos ante 429/5xx + caché 0ms
+    // 3) Gemini 2.5 Flash Pro TTS con Circuit-Breaker instantáneo ante cuota agotada (429)
+    // Si la cuota gratuita diaria de Gemini (15 req/día) se agotó, pasa en 0 ms a la voz neural fluida sin demoras ni cortes
     if (requestedVoice.startsWith("gemini:")) {
       const gVoice = requestedVoice.slice("gemini:".length).trim() || "Charon";
       const key = resolveGeminiKey(geminiApiKey);
-      if (key) {
+      if (key && Date.now() >= geminiTtsCooldownUntil) {
         callVoice({ cmd: "mute_for", seconds: Math.max(2.5, cleanText.length * 0.08) }, 1500).catch(
           () => {},
         );
-        let result = await synthesizeGeminiTts(cleanText, gVoice, key);
-        if (!result?.dataUrl) {
-          const wait1 = result?.statusCode === 429 ? 1100 : 450;
-          await new Promise((r) => setTimeout(r, wait1));
-          result = await synthesizeGeminiTts(cleanText, gVoice, key);
-        }
-        if (!result?.dataUrl) {
-          const wait2 = result?.statusCode === 429 ? 1800 : 750;
-          await new Promise((r) => setTimeout(r, wait2));
-          result = await synthesizeGeminiTts(cleanText, gVoice, key);
-        }
-        if (result?.dataUrl) {
+        const result = await synthesizeGeminiTts(cleanText, gVoice, key);
+        if (result?.statusCode === 429) {
+          // Cuota de Gemini TTS agotada: activa circuit-breaker por 10 min para responder al instante sin pausas
+          geminiTtsCooldownUntil = Date.now() + 10 * 60 * 1000;
+        } else if (result?.dataUrl) {
           if (result.wavBuf) {
             writeVoiceCache(requestedVoice, cleanText, result.wavBuf);
-            // Si aún no existe un clip de referencia de Jarvis, guarda el primero automáticamente
             if (!fs.existsSync(JARVIS_REF_WAV) && gVoice === "Charon" && result.wavBuf.length > 48000) {
               try {
                 fs.writeFileSync(JARVIS_REF_WAV, result.wavBuf);
@@ -2488,9 +2482,9 @@ app.whenReady().then(() => {
           return { audio: result.dataUrl, voice: requestedVoice, engine: "gemini-tts" };
         }
       }
-      // Respaldo de emergencia 100% español latino puro (sin sobreescribir jamás la caché de Gemini ni mezclar clonación)
+      // Respaldo instantáneo (250 ms) con fonética fluida y prosodia natural 100% en español latino
       const isMale = /charon|fenrir|puck|orus/i.test(gVoice);
-      const fallbackVoice = isMale ? "es-MX-JorgeNeural" : "es-BO-SofiaNeural";
+      const fallbackVoice = isMale ? "es-CO-GonzaloNeural" : "es-BO-SofiaNeural";
       return await callVoice({ cmd: "speak", text: cleanText, voice: fallbackVoice }, 12000);
     }
 

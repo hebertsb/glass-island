@@ -327,10 +327,12 @@ export const VOICE_PROFILES = [
   { id: "en-US-AndrewMultilingualNeural", label: "✨ Andrew HD · KAI Natural (Gratis)" },
   { id: "en-US-EmmaMultilingualNeural", label: "✨ Emma HD · AVA Cálida (Gratis)" },
   { id: "en-US-AvaMultilingualNeural", label: "✨ Ava HD · Bilingüe ES/EN (Gratis)" },
-  { id: "es-BO-SofiaNeural", label: "Sofía · Bolivia" },
-  { id: "es-BO-MarceloNeural", label: "Marcelo · Bolivia" },
-  { id: "es-MX-JorgeNeural", label: "Jorge · México (Grave)" },
-  { id: "es-MX-DaliaNeural", label: "Dalia · México" },
+  { id: "es-CO-GonzaloNeural", label: "🎩 Gonzalo · Jarvis Latino Fluido (Gratis, Sin Límite)" },
+  { id: "es-AR-TomasNeural", label: "🎩 Tomás · Jarvis Natural (Gratis, Sin Límite)" },
+  { id: "es-BO-SofiaNeural", label: "Sofía · Bolivia (Gratis, Sin Límite)" },
+  { id: "es-BO-MarceloNeural", label: "Marcelo · Bolivia (Gratis, Sin Límite)" },
+  { id: "es-MX-JorgeNeural", label: "Jorge · México (Gratis, Sin Límite)" },
+  { id: "es-MX-DaliaNeural", label: "Dalia · México (Gratis, Sin Límite)" },
 ] as const;
 
 function norm(text: string): string {
@@ -544,19 +546,21 @@ export async function executeSubuCommand(
   // Limpia frases de cortesía como "quiero que ..." / "puedes ..."
   q = q.replace(/^(?:quiero que|puedes|podes|necesito que|por favor)\s+/, "").trim();
 
-  // 0a0. Registro del nombre del dueño (primera vez o en cualquier momento: "me llamo Carlos", "llámame Jefe", `regístrame como ${boss}`)
+  // 0a0. Registro del nombre del dueño (con frase explícita o respondiendo a la bienvenida inicial)
   const explicitNameMatch = q.match(
-    /^(?:me llamo|mi nombre es|llamame|dime|registra(?:me)?\s+(?:como|con el nombre)|soy)\s+([a-zñáéíóú\s]{2,28})$/i,
+    /^(?:me llamo|mi nombre es|llamame|dime|registra(?:me)?\s+(?:como|con el nombre|con)|soy)\s+([a-zñáéíóú\s]{2,28})$/i,
   );
   if (explicitNameMatch || isPendingNameRegistration()) {
     const rawCandidate = explicitNameMatch ? explicitNameMatch[1] : q;
     const cleaned = rawCandidate
-      .replace(/^(?:con el nombre|como|me llamo|mi nombre es|soy|llamame|dime|ponme|registra(?:me)?)\s+/gi, "")
+      .replace(/^(?:con el nombre|con|como|me llamo|mi nombre es|soy|llamame|dime|ponme|registra(?:me)?)\s+/gi, "")
       .trim();
-    // Si estaba esperando el nombre inicial y el usuario dijo algo corto (1-3 palabras sin verbo de comando)
+    const NOISE_NAME_RE =
+      /\b(?:con|como|que|cual|quien|hola|buenas|tardes|dias|noches|nova|base|nombre|registro|registra)\b/i;
     if (
       cleaned.length >= 2 &&
-      cleaned.split(" ").length <= 3 &&
+      cleaned.split(" ").length <= 2 &&
+      !NOISE_NAME_RE.test(cleaned) &&
       (explicitNameMatch || !COMMAND_HINT_RE.test(cleaned))
     ) {
       const prettyBoss = cleaned
@@ -570,7 +574,6 @@ export async function executeSubuCommand(
       pushContextTurn("assistant", reply, "chat", prettyBoss);
       return { ok: true, reply };
     }
-    // Si dijo una orden real en vez de su nombre, cancela la espera del nombre y sigue ejecutando la orden
     setPendingNameRegistration(false);
   }
 
