@@ -49,6 +49,7 @@ export interface ShelfFile {
   path: string;
   name: string;
   size_bytes: number;
+  addedAt?: number;
 }
 
 export interface TelemetryData {
@@ -376,6 +377,7 @@ export interface GlassIslandApi {
   glassdrop_start: (files?: ShelfFile[]) => Promise<{ running: boolean; url?: string; ip?: string; port?: number; error?: string }>;
   glassdrop_stop: () => Promise<{ running: boolean }>;
   glassdrop_sync: (files: ShelfFile[]) => Promise<boolean>;
+  prune_shelf_files: (files: ShelfFile[]) => Promise<ShelfFile[]>;
   glassdrop_open_folder: (subFolder?: string) => Promise<{ ok: boolean; path?: string }>;
   on_glassdrop_event: (
     cb: (msg: {

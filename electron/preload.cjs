@@ -69,6 +69,7 @@ const api = {
   glassdrop_start: (files) => ipcRenderer.invoke("island:glassdrop-start", files),
   glassdrop_stop: () => ipcRenderer.invoke("island:glassdrop-stop"),
   glassdrop_sync: (files) => ipcRenderer.invoke("island:glassdrop-sync", files),
+  prune_shelf_files: (files) => ipcRenderer.invoke("island:prune-shelf-files", files),
   glassdrop_open_folder: (subFolder) => ipcRenderer.invoke("island:glassdrop-open-folder", subFolder),
   on_glassdrop_event: (cb) => {
     const fn = (_e, msg) => cb(msg);

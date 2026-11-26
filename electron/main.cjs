@@ -2177,6 +2177,24 @@ app.whenReady().then(() => {
     return true;
   });
 
+  // Filtra automáticamente de la lista del Estante los archivos que ya fueron movidos, renombrados, borrados o caducaron (>24h)
+  ipcMain.handle("island:prune-shelf-files", (_e, files) => {
+    const arr = Array.isArray(files) ? files : [];
+    const maxAgeMs = 24 * 3600 * 1000;
+    const now = Date.now();
+    return arr
+      .filter((f) => {
+        if (!f || !f.path) return false;
+        if (typeof f.addedAt === "number" && now - f.addedAt > maxAgeMs) return false;
+        try {
+          return fs.existsSync(f.path);
+        } catch {
+          return false;
+        }
+      })
+      .slice(0, 15);
+  });
+
   ipcMain.handle("island:glassdrop-start", async (_e, files) => {
     if (Array.isArray(files)) shelfFilesCache = files;
     return await glassDrop.start();

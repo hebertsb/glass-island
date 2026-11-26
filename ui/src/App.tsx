@@ -1120,10 +1120,24 @@ export default function App() {
     }
   }
 
-  // Sincroniza los archivos del Estante con el servidor Wi-Fi local GlassDrop (para cualquier celular Android/iOS)
+  // Sincroniza los archivos del Estante con GlassDrop y limpia automáticamente archivos movidos, renombrados o >24h
   useEffect(() => {
     getBridge()?.glassdrop_sync?.(config.shelfFiles).catch(() => {});
   }, [config.shelfFiles]);
+
+  useEffect(() => {
+    if (activeTab !== "shelf" || !expanded) return;
+    const cur = configRef.current.shelfFiles;
+    if (cur.length === 0) return;
+    getBridge()
+      ?.prune_shelf_files?.(cur)
+      .then((valid) => {
+        if (Array.isArray(valid) && valid.length !== cur.length) {
+          setConfig((p) => ({ ...p, shelfFiles: valid }));
+        }
+      })
+      .catch(() => {});
+  }, [activeTab, expanded]);
 
   // Escucha archivos o texto recibidos desde cualquier celular por Wi-Fi (GlassDrop)
   const dropBatchRef = useRef<{ names: string[]; timer: number | null }>({ names: [], timer: null });
@@ -1136,10 +1150,10 @@ export default function App() {
         playWakeChime(configRef.current.hudSounds !== false);
         triggerBurst("happy", 1400);
       } else if (msg.kind === "file" && msg.file) {
-        const incoming = msg.file;
+        const incoming = { ...msg.file, addedAt: Date.now() };
         setConfig((p) => ({
           ...p,
-          shelfFiles: [incoming, ...p.shelfFiles.filter((x) => x.path !== incoming.path)],
+          shelfFiles: [incoming, ...p.shelfFiles.filter((x) => x.path !== incoming.path)].slice(0, 15),
         }));
         if (incoming.folder) setLastDropFolder(incoming.folder);
         playDoneChime(configRef.current.hudSounds !== false);
@@ -2777,6 +2791,16 @@ export default function App() {
                       >
                         📂 Carpeta
                       </button>
+                      {config.shelfFiles.length > 0 && (
+                        <button
+                          type="button"
+                          className="glass-btn"
+                          onClick={() => setConfig((p) => ({ ...p, shelfFiles: [] }))}
+                          title="Vacía solo esta lista visual (no borra tus archivos de Descargas\\GlassDrop)"
+                        >
+                          🧹 Limpiar
+                        </button>
+                      )}
                       <button
                         type="button"
                         className={`glass-btn${glassDropUrl ? " glass-btn--white" : ""}`}
