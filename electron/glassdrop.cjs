@@ -217,7 +217,7 @@ function createGlassDropServer({ getShelfFiles, onFileReceived, onClipReceived }
 
   function start() {
     if (server) {
-      const url = `http://${ip}:${port}/?t=${token}`;
+      const url = `http://${ip}:${port}/go/${token}`;
       return Promise.resolve({ running: true, url, ip, port, token });
     }
     ip = getLocalLanIp();
@@ -228,14 +228,15 @@ function createGlassDropServer({ getShelfFiles, onFileReceived, onClipReceived }
       const srv = http.createServer((req, res) => {
         try {
           const parsed = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`);
-          const reqToken = parsed.searchParams.get("t") || "";
+          const pathTokenMatch = parsed.pathname.match(/^\/go\/([a-f0-9]+)$/i);
+          const reqToken = parsed.searchParams.get("t") || pathTokenMatch?.[1] || "";
           if (reqToken !== token) {
             res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8" });
             res.end("Escanea el codigo QR en GlassIsland para conectarte.");
             return;
           }
 
-          if (req.method === "GET" && parsed.pathname === "/") {
+          if (req.method === "GET" && (parsed.pathname === "/" || Boolean(pathTokenMatch))) {
             res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
             res.end(html);
             return;
@@ -339,7 +340,7 @@ function createGlassDropServer({ getShelfFiles, onFileReceived, onClipReceived }
           server = srv;
           const addr = srv.address();
           port = typeof addr === "object" && addr ? addr.port : p;
-          const url = `http://${ip}:${port}/?t=${token}`;
+          const url = `http://${ip}:${port}/go/${token}`;
           resolve({ running: true, url, ip, port, token });
         });
       };
