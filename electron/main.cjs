@@ -403,7 +403,7 @@ app.whenReady().then(() => {
     if (!hint) return { ok: false };
     return new Promise((resolve) => {
       const ps = `
-        Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class GIFocus { [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr h, int c); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h); }'
+        Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class GIFocus { [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr h, int c); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr h); [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr hAfter, int X, int Y, int cx, int cy, uint flags); [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h); }'
         $p = Get-Process -Name "${hint}" -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Sort-Object StartTime -Descending | Select-Object -First 1
         if ($null -eq $p) {
           $p = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and ($_.ProcessName -like "*${hint}*" -or $_.MainWindowTitle -like "*${hint}*") } | Select-Object -First 1
@@ -411,6 +411,9 @@ app.whenReady().then(() => {
         if ($null -ne $p) {
           $h = $p.MainWindowHandle
           if ([GIFocus]::IsIconic($h)) { [GIFocus]::ShowWindowAsync($h, 9) | Out-Null }
+          [GIFocus]::SetWindowPos($h, [IntPtr](-1), 0, 0, 0, 0, 0x0043) | Out-Null
+          [GIFocus]::SetWindowPos($h, [IntPtr](-2), 0, 0, 0, 0, 0x0043) | Out-Null
+          [GIFocus]::BringWindowToTop($h) | Out-Null
           [GIFocus]::SetForegroundWindow($h) | Out-Null
           Write-Output "FOCUSED"
         } else {
@@ -675,34 +678,61 @@ app.whenReady().then(() => {
     }
   });
 
-  // Mueve la ventana activa o una app nombrada a la Pantalla Principal (1) o Secundaria (2)
+  // Mueve la ventana activa o una app nombrada a la Pantalla Principal (1) o Secundaria (2) y la trae al PRIMER PLANO real
   ipcMain.handle("island:move-window-display", async (_e, appHint, targetDisplay = "secondary") => {
     const hint = String(appHint || "").replace(/[^a-zA-Z0-9 ._-]/g, "").trim();
     const wantSecondary = String(targetDisplay || "").toLowerCase() === "secondary";
-    const displays = screen.getAllDisplays();
-    const primary = screen.getPrimaryDisplay();
-    const target = wantSecondary
-      ? displays.find((d) => d.id !== primary.id) || primary
-      : primary;
-    const bx = Math.round(target.workArea.x + 40);
-    const by = Math.round(target.workArea.y + 40);
-    const bw = Math.max(640, Math.round(target.workArea.width - 80));
-    const bh = Math.max(480, Math.round(target.workArea.height - 80));
+    if (win && !win.isDestroyed()) {
+      try {
+        win.blur();
+      } catch {
+        // ignore
+      }
+    }
 
     return await new Promise((resolve) => {
       const ps = `
-        Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class GIMove { [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c); [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int X, int Y, int W, int H, bool repaint); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h); }'
-        $hint = '${hint}';
+        Add-Type -AssemblyName System.Windows.Forms
+        Add-Type -TypeDefinition '
+          using System;
+          using System.Runtime.InteropServices;
+          public class GIMove {
+            [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);
+            [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int X, int Y, int W, int H, bool repaint);
+            [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+            [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr h);
+            [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr hAfter, int X, int Y, int cx, int cy, uint flags);
+            [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr h);
+            public static void BringFront(IntPtr h) {
+              SetWindowPos(h, new IntPtr(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040);
+              SetWindowPos(h, new IntPtr(-2), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0040);
+              BringWindowToTop(h);
+              SetForegroundWindow(h);
+            }
+          }
+        '
+        $targetScreen = if ($${wantSecondary ? "true" : "false"}) {
+          $s = [System.Windows.Forms.Screen]::AllScreens | Where-Object { -not $_.Primary } | Select-Object -First 1
+          if ($s) { $s } else { [System.Windows.Forms.Screen]::PrimaryScreen }
+        } else {
+          [System.Windows.Forms.Screen]::PrimaryScreen
+        }
+        $wa = $targetScreen.WorkingArea
+        $bx = [int]($wa.X + 24); $by = [int]($wa.Y + 24)
+        $bw = [int][Math]::Max(720, $wa.Width - 48); $bh = [int][Math]::Max(520, $wa.Height - 48)
+        $hint = '${hint}'
         if ($hint -ne '') {
-          $p = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and $_.ProcessName -ne 'electron' -and ($_.ProcessName -like "*$hint*" -or $_.MainWindowTitle -like "*$hint*") } | Select-Object -First 1
+          $p = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and $_.ProcessName -ne 'electron' -and ($_.ProcessName -like "*$hint*" -or $_.MainWindowTitle -like "*$hint*") } | Sort-Object { if($_.MainWindowTitle -ne ''){0}else{1} } | Select-Object -First 1
         } else {
           $p = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle -ne '' -and $_.ProcessName -ne 'electron' } | Select-Object -First 1
         }
         if ($null -ne $p) {
           $h = $p.MainWindowHandle
+          $wasMax = [GIMove]::IsZoomed($h)
           [GIMove]::ShowWindow($h, 9) | Out-Null
-          [GIMove]::MoveWindow($h, ${bx}, ${by}, ${bw}, ${bh}, $true) | Out-Null
-          [GIMove]::SetForegroundWindow($h) | Out-Null
+          [GIMove]::MoveWindow($h, $bx, $by, $bw, $bh, $true) | Out-Null
+          if ($wasMax) { [GIMove]::ShowWindow($h, 3) | Out-Null }
+          [GIMove]::BringFront($h)
           Write-Output ("MOVED|" + $p.MainWindowTitle)
         } else {
           Write-Output "NONE"
@@ -711,7 +741,7 @@ app.whenReady().then(() => {
       execFile(
         PS_EXE,
         ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", ps],
-        { windowsHide: true, timeout: 4000 },
+        { windowsHide: true, timeout: 4500 },
         (_err, stdout) => {
           const out = String(stdout || "").trim();
           if (out.startsWith("MOVED|")) {

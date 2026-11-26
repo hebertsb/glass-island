@@ -797,22 +797,29 @@ export async function executeSubuCommand(
       : { ok: false, reply: `No encontré una ventana abierta de ${appTarget}.` };
   }
 
-  // 0e2. Tool: Mover ventana entre Pantalla Principal (1) y Secundaria (2)
-  // Soporta: "trae Chrome a mi pantalla 1", "pasa Chrome a la pantalla uno", "pasaron a la pantalla 1", "mueve esta ventana al monitor 2"
+  // 0e2. Tool: Mover ventana entre Pantalla Principal (1) y Secundaria (2) — SIEMPRE la trae en PRIMER PLANO
+  // Soporta todos los sustantivos y repeticiones de voz:
+  // "trae Chrome a esta pantalla", "trae crohn a la pantalla 1", "pasa Chrome a la primera pantalla",
+  // "lleva VS Code a la segunda pantalla", "mueve esto al monitor dos", "pasa a la pantalla contraria"
   const moveWinMatch = q.match(
-    /^(?:(?:a\s+)?(?:pasa|pasame|pasar|pasaron|mueve|moveme|mover|trae|traeme|traer|lleva|pon))\s+(?:(?:la\s+ventana\s+de\s+|la\s+ventana\s+|esta\s+ventana|esta\s+app|(.+?))\s+)?(?:a\s+la|a\s+mi|al|para\s+la|hacia\s+la)\s+(pantalla\s+principal|pantalla\s+1|pantalla\s+uno|monitor\s+1|monitor\s+uno|pantalla\s+secundaria|pantalla\s+2|pantalla\s+dos|monitor\s+2|monitor\s+dos|otro\s+monitor|otra\s+pantalla)$/,
+    /^(?:(?:a\s+)?(?:pasa|pasame|pasar|pasaron|mueve|moveme|mover|trae|traeme|traer|lleva|llevame|llevar|pon|ponme))\s+(?:(?:la\s+ventana\s+de\s+|la\s+ventana\s+|esta\s+ventana|esta\s+app|(.+?))\s+)?(?:(?:a\s+la|a\s+mi|a\s+esta|a\s+este|al|para\s+la|hacia\s+la|en\s+la)\s+)+(?:(?:a\s+esta|a\s+este|a\s+la)\s+)?(pantalla\s+principal|primera\s+pantalla|pantalla\s+primera|pantalla\s+1|pantalla\s+uno|monitor\s+principal|primer\s+monitor|monitor\s+1|monitor\s+uno|pantalla\s+de\s+la\s+laptop|pantalla|monitor|pantalla\s+secundaria|segunda\s+pantalla|pantalla\s+segunda|pantalla\s+2|pantalla\s+dos|monitor\s+secundario|segundo\s+monitor|monitor\s+2|monitor\s+dos|otro\s+monitor|otra\s+pantalla|pantalla\s+contraria|monitor\s+contrario)$/,
   );
   if (moveWinMatch) {
     let rawHint = (moveWinMatch[1] || "")
       .replace(/^(?:la\s+ventana\s+de\s+|la\s+app\s+de\s+|esta\s+ventana|esta\s+app|esto|eso)$/g, "")
+      .replace(/\s+(?:a\s+esta|a\s+este|a\s+la|a\s+mi)$/g, "")
       .trim();
-    if (/^(?:google|google chrome|chrome|crome)$/i.test(rawHint)) rawHint = "chrome";
-    else if (/^(?:vs code|vscode|visual studio code|visual studio|code)$/i.test(rawHint)) rawHint = "Code";
+    if (/^(?:google|google chrome|chrome|crome|crohn|crom|crone|krom|chorme|navegador)$/i.test(rawHint)) rawHint = "chrome";
+    else if (/^(?:vs code|vscode|visual studio code|visual studio|visual estudio|code)$/i.test(rawHint)) rawHint = "Code";
+    else if (/^(?:edge|microsoft edge)$/i.test(rawHint)) rawHint = "msedge";
+    else if (/^(?:whatsapp|wasap|wsp)$/i.test(rawHint)) rawHint = "WhatsApp";
+    else if (/^(?:spotify|espotifai)$/i.test(rawHint)) rawHint = "Spotify";
     const dest = moveWinMatch[2] || "";
-    const targetDisplay: "primary" | "secondary" = /principal|\b1\b|\buno\b/.test(dest) ? "primary" : "secondary";
+    const isSecondary = /secundari|segund|\b2\b|\bdos\b|otr[oa]|contrari/.test(dest);
+    const targetDisplay: "primary" | "secondary" = isSecondary ? "secondary" : "primary";
     const res = await api?.move_window_display?.(rawHint, targetDisplay);
     return res?.ok
-      ? { ok: true, reply: `Listo, pasé ${res.title || "la ventana"} a tu ${res.target}.` }
+      ? { ok: true, reply: `Listo, traje ${res.title || "la ventana"} en primer plano a tu ${res.target}.` }
       : { ok: false, reply: "No encontré una ventana abierta para mover de pantalla." };
   }
 
