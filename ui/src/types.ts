@@ -325,7 +325,7 @@ export interface GlassIslandApi {
   close_app: (name: string) => Promise<{ ok: boolean }>;
   kb_load: () => Promise<NovaKnowledgeBase>;
   kb_save: (data: NovaKnowledgeBase) => Promise<boolean>;
-  system_action: (action: string) => Promise<{ ok: boolean; path?: string; message?: string }>;
+  system_action: (action: string) => Promise<{ ok: boolean; path?: string; clipEntry?: ClipEntry; message?: string }>;
   nova_llm_route: (payload: {
     utterance: string;
     assistantName: string;

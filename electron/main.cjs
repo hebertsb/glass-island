@@ -517,55 +517,66 @@ app.whenReady().then(() => {
 
   ipcMain.handle("island:get-clipboard-rich", () => {
     try {
+      const formats = clipboard.availableFormats() || [];
+      const hasImageFormat = formats.some((f) => /image/i.test(f));
+      if (hasImageFormat) {
+        const img = clipboard.readImage();
+        if (img && !img.isEmpty()) {
+          const png = img.toPNG();
+          if (png && png.length > 0) {
+            const hash = crypto.createHash("sha1").update(png).digest("hex").slice(0, 12);
+            const id = "img:" + hash;
+            if (lastClipHash === id && lastClipEntry) {
+              return lastClipEntry;
+            }
+            // Si coincide con la captura recién guardada por el botón 📸 Captura, conserva esa misma entrada
+            if (lastClipEntry && lastClipEntry.kind === "image" && lastClipHash.startsWith("img:Nova_")) {
+              return lastClipEntry;
+            }
+            fs.mkdirSync(CLIP_CACHE_DIR, { recursive: true });
+            const filePath = path.join(CLIP_CACHE_DIR, `Captura_${hash}.png`);
+            if (!fs.existsSync(filePath)) {
+              fs.writeFileSync(filePath, png);
+              try {
+                const files = fs
+                  .readdirSync(CLIP_CACHE_DIR)
+                  .map((n) => ({
+                    p: path.join(CLIP_CACHE_DIR, n),
+                    t: fs.statSync(path.join(CLIP_CACHE_DIR, n)).mtimeMs,
+                  }))
+                  .sort((a, b) => b.t - a.t);
+                for (const old of files.slice(25)) {
+                  try {
+                    fs.unlinkSync(old.p);
+                  } catch {
+                    // ignore
+                  }
+                }
+              } catch {
+                // ignore
+              }
+            }
+            const sz = img.getSize();
+            const thumb = sz.width > 160 ? img.resize({ width: 160, quality: "good" }) : img;
+            const thumbUrl = `data:image/jpeg;base64,${thumb.toJPEG(78).toString("base64")}`;
+            lastClipHash = id;
+            lastClipEntry = {
+              kind: "image",
+              id,
+              filePath,
+              thumbUrl,
+              label: `Captura_${hash.slice(0, 6)}.png · ${sz.width}×${sz.height}`,
+            };
+            return lastClipEntry;
+          }
+        }
+      }
       const txt = (clipboard.readText() || "").trim();
       if (txt) {
         const clean = txt.slice(0, 1500);
         const id = "txt:" + crypto.createHash("sha1").update(clean).digest("hex").slice(0, 12);
         lastClipHash = id;
         lastClipEntry = { kind: "text", id, text: clean };
-        return lastClipEntry;
-      }
-      const img = clipboard.readImage();
-      if (img && !img.isEmpty()) {
-        const png = img.toPNG();
-        if (!png || png.length === 0) return null;
-        const hash = crypto.createHash("sha1").update(png).digest("hex").slice(0, 12);
-        const id = "img:" + hash;
-        if (lastClipHash === id && lastClipEntry) {
-          return lastClipEntry;
-        }
-        fs.mkdirSync(CLIP_CACHE_DIR, { recursive: true });
-        const filePath = path.join(CLIP_CACHE_DIR, `Captura_${hash}.png`);
-        if (!fs.existsSync(filePath)) {
-          fs.writeFileSync(filePath, png);
-          // Mantiene máximo 25 imágenes en caché de portapapeles
-          try {
-            const files = fs
-              .readdirSync(CLIP_CACHE_DIR)
-              .map((n) => ({ p: path.join(CLIP_CACHE_DIR, n), t: fs.statSync(path.join(CLIP_CACHE_DIR, n)).mtimeMs }))
-              .sort((a, b) => b.t - a.t);
-            for (const old of files.slice(25)) {
-              try {
-                fs.unlinkSync(old.p);
-              } catch {
-                // ignore
-              }
-            }
-          } catch {
-            // ignore
-          }
-        }
-        const sz = img.getSize();
-        const thumb = sz.width > 160 ? img.resize({ width: 160, quality: "good" }) : img;
-        const thumbUrl = `data:image/jpeg;base64,${thumb.toJPEG(78).toString("base64")}`;
-        lastClipHash = id;
-        lastClipEntry = {
-          kind: "image",
-          id,
-          filePath,
-          thumbUrl,
-          label: `Captura_${hash.slice(0, 6)}.png · ${sz.width}×${sz.height}`,
-        };
         return lastClipEntry;
       }
       return null;
@@ -927,11 +938,27 @@ app.whenReady().then(() => {
             }
           }
         }
-        // Copia la imagen directamente al portapapeles de Windows para poder pegarla con Ctrl+V al instante
+        // Copia la imagen directamente al portapapeles de Windows y construye la tarjeta para Clips (Portapapeles)
+        let clipEntry = null;
         try {
           if (fs.existsSync(filePath)) {
             const shotImg = nativeImage.createFromPath(filePath);
-            if (!shotImg.isEmpty()) clipboard.writeImage(shotImg);
+            if (!shotImg.isEmpty()) {
+              clipboard.writeImage(shotImg);
+              const sz = shotImg.getSize();
+              const thumb = sz.width > 160 ? shotImg.resize({ width: 160, quality: "good" }) : shotImg;
+              const thumbUrl = `data:image/jpeg;base64,${thumb.toJPEG(80).toString("base64")}`;
+              const id = `img:${path.basename(filePath)}`;
+              lastClipHash = id;
+              lastClipEntry = {
+                kind: "image",
+                id,
+                filePath,
+                thumbUrl,
+                label: `${path.basename(filePath)} · ${sz.width}×${sz.height}`,
+              };
+              clipEntry = lastClipEntry;
+            }
           }
         } catch {
           // ignore
@@ -939,6 +966,7 @@ app.whenReady().then(() => {
         return {
           ok: fs.existsSync(filePath),
           path: filePath,
+          clipEntry,
           message: "Captura guardada en Imágenes y copiada al portapapeles.",
         };
       }

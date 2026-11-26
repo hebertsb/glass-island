@@ -564,7 +564,6 @@ export default function App() {
   const [inFullscreen, setInFullscreen] = useState(false);
   const [glassDropUrl, setGlassDropUrl] = useState<string | null>(null);
   const [glassDropToast, setGlassDropToast] = useState<string | null>(null);
-  const [shotToast, setShotToast] = useState<{ label: string; path?: string } | null>(null);
   const [glassDropDevice, setGlassDropDevice] = useState<string | null>(null);
   const [lastDropFolder, setLastDropFolder] = useState<string | undefined>(undefined);
   const [nowPlaying, setNowPlaying] = useState<NowPlayingData>(() => {
@@ -3273,7 +3272,7 @@ export default function App() {
                       </button>
                       <button
                         type="button"
-                        className={`cc-tile ${shotToast ? "active" : ""}`}
+                        className="cc-tile"
                         onClick={() => {
                           getBridge()
                             ?.system_action("screenshot")
@@ -3283,49 +3282,25 @@ export default function App() {
                                 triggerBurst("happy", 1400);
                                 setGreenGlow(true);
                                 window.setTimeout(() => setGreenGlow(false), 1400);
-                                setShotToast({
-                                  label: "✓ Copiada (Ctrl+V)",
-                                  path: res.path,
-                                });
-                                window.setTimeout(() => setShotToast(null), 4200);
-                                getBridge()
-                                  ?.get_clipboard_rich?.()
-                                  .then((entry) => {
-                                    if (!entry) return;
-                                    setClipHistory((prev) => [
-                                      entry,
-                                      ...prev.filter((x) => x.id !== entry.id),
-                                    ].slice(0, 15));
-                                  })
-                                  .catch(() => {});
+                                if (res.clipEntry) {
+                                  const entry = res.clipEntry;
+                                  setClipHistory((prev) => [
+                                    entry,
+                                    ...prev.filter((x) => x.id !== entry.id),
+                                  ].slice(0, 15));
+                                }
+                                // Lleva directo a Portapapeles (Clips) para ver, copiar (Ctrl+V) o arrastrar la captura
+                                setActiveTab("clipboard");
                               }
                             })
                             .catch(() => {});
                         }}
-                        title="Tomar captura limpia, guardar en Imágenes\Screenshots y copiar al portapapeles (Ctrl+V)"
+                        title="Tomar captura limpia y mostrarla al instante en Portapapeles (Clips) para pegar o arrastrar"
                       >
-                        {shotToast ? shotToast.label : "📸 Captura"}
+                        📸 Captura
                       </button>
                     </div>
                   </div>
-                  {shotToast?.path && (
-                    <button
-                      type="button"
-                      className="btn-ghost"
-                      style={{
-                        width: "100%",
-                        justifyContent: "space-between",
-                        fontSize: 11,
-                        padding: "5px 10px",
-                        borderColor: "rgba(52,211,153,0.4)",
-                        color: "#a7f3d0",
-                      }}
-                      onClick={() => getBridge()?.launch(shotToast.path!).catch(() => {})}
-                    >
-                      <span>📸 Guardada en Imágenes\Screenshots y copiada al portapapeles</span>
-                      <strong>Abrir ↗</strong>
-                    </button>
-                  )}
 
                   {/* Plan de energía + Expresiones del robot */}
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, flexWrap: "wrap" }}>
