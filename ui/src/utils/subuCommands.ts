@@ -28,11 +28,27 @@ import {
   type FolderChoice,
 } from "./novaDecisionTree";
 
-export { hasActiveConversationExpectation, setPendingFolders, type FolderChoice };
+import {
+  adaptReplyToPersonality,
+  detectUserAttitude,
+  type AttitudeProfile,
+  type PersonalityMode,
+} from "./novaPersonality";
+
+export {
+  hasActiveConversationExpectation,
+  setPendingFolders,
+  detectUserAttitude,
+  type FolderChoice,
+  type AttitudeProfile,
+  type PersonalityMode,
+};
 
 export interface SubuResult {
   reply: string;
   ok: boolean;
+  /** Actitud detectada del usuario (para entonación dinámica de voz y expresión del robot) */
+  attitude?: AttitudeProfile;
   /** Si Nova no entendió, expone la frase normalizada para poder enseñársela en 1 clic */
   unknownPhrase?: string;
   /** Si encontró 2+ carpetas parecidas, las muestra como íconos 📁 clicables + elegibles por voz */
@@ -184,6 +200,48 @@ export async function executeNovaTool(
   if (tool === "smart_home") {
     return await executeSubuCommand(cleanArg === "lights_off" ? "apaga las luces" : "prende las luces", ctx);
   }
+  if (tool === "custom_macro") {
+    const spec = norm(cleanArg);
+    const doneSteps: string[] = [];
+    if (/\b(?:hibernar|hibernacion|hiberna)\b/.test(spec)) {
+      await api?.system_action("hibernate");
+      return { ok: true, reply: "Hibernando tu laptop ahora, Hebert." };
+    }
+    if (/\b(?:suspender|suspende|dormir)\b/.test(spec)) {
+      await api?.system_action("sleep");
+      return { ok: true, reply: "Suspendiendo tu laptop ahora, Hebert." };
+    }
+    if (/\b(?:cero musica|sin musica|pausa.*musica|quita.*musica|silencia|apaga.*musica)\b/.test(spec)) {
+      await api?.close_app("youtube").catch(() => {});
+      await api?.media_control("vol_mute").catch(() => {});
+      doneSteps.push("música silenciada");
+    }
+    if (/\b(?:visual studio code|vs code|vscode|proyecto activo|primer plano)\b/.test(spec)) {
+      let appsList = ctx.installedApps;
+      if (appsList.length === 0) appsList = (await api?.list_installed_apps().catch(() => [])) || [];
+      const vsApp = appsList.find((a) => /visual studio code|^code$/i.test(a.name) || /^code$/i.test(a.processName));
+      if (vsApp) await api?.launch(vsApp.lnkPath || vsApp.exePath);
+      doneSteps.push("Visual Studio Code en primer plano");
+    }
+    if (/\b(?:apagar.*notificacion|sin notificacion|sin interrupcion|no molestar|concentracion)\b/.test(spec)) {
+      ctx.startFocus(30);
+      ctx.setActiveTab?.("focus");
+      await api?.system_action("dnd").catch(() => {});
+      doneSteps.push("Focus activo y notificaciones silenciadas");
+    }
+    const brM = spec.match(/brillo\s+(?:al\s+)?(\d{1,3})/);
+    if (brM) {
+      const lvl = Math.max(10, Math.min(100, Number(brM[1])));
+      ctx.setBrightness(lvl);
+      await api?.set_brightness(lvl);
+      doneSteps.push(`brillo al ${lvl}%`);
+    }
+    if (doneSteps.length > 0) {
+      return { ok: true, reply: `Listo, Hebert. Ejecuté tu rutina: ${doneSteps.join(", ")}.` };
+    }
+    // Si la rutina tiene otras instrucciones personalizadas, ejecútala directamente como comando
+    return await executeSubuCommand(cleanArg, ctx);
+  }
   // open_app
   return await executeSubuCommand(`abre ${cleanArg}`, ctx);
 }
@@ -211,6 +269,8 @@ export interface SubuContext {
   setCodingMusic?: (song: string) => void;
   setGlassDropUrl?: (url: string | null) => void;
   smartHomeWebhook?: string;
+  personalityMode?: PersonalityMode;
+  acousticTone?: "urgent" | "calm" | "normal";
   aiBrainEnabled?: boolean;
   geminiApiKey?: string;
   ollamaModel?: string;
@@ -309,6 +369,7 @@ export async function speakAsSubu(
   onStart?: () => void,
   onEnd?: () => void,
   geminiApiKey?: string,
+  ttsStyle?: string,
 ): Promise<void> {
   if (!enabled || !text.trim()) return;
   try {
@@ -317,7 +378,7 @@ export async function speakAsSubu(
       activeAudio = null;
     }
     const api = getBridge();
-    const res = await api?.voice_speak(text, voiceName, geminiApiKey).catch(() => null);
+    const res = await api?.voice_speak(text, voiceName, geminiApiKey, ttsStyle).catch(() => null);
     if (res?.audio) {
       const audio = new Audio(res.audio);
       activeAudio = audio;
@@ -600,17 +661,39 @@ export async function executeSubuCommand(
     }
   }
 
-  // 0. Base de Conocimiento: enseñanza directa por voz ("recuerda que mi editor es visual studio code")
-  const teachAliasMatch = q.match(/^(?:recuerda|acordate|aprende)\s+que\s+(.+?)\s+(?:es|significa)\s+(.+)$/);
+  // 0. Base de Conocimiento: enseñanza directa por voz (con o sin "que")
+  // Ej: "recuerda modo hibernar es poner hibernación la laptop"
+  //     "recuerda que modo análisis es cero música, abrir VS Code en primer plano y apagar notificaciones"
+  const teachAliasMatch = q.match(
+    /^(?:recuerda|acordate|aprende|memoriza)\s+(?:que\s+)?(.+?)\s+(?:es|significa|sera|hace|quiere decir)\s+(.+)$/,
+  );
   if (teachAliasMatch) {
     const aliasKey = teachAliasMatch[1].trim();
     const aliasVal = teachAliasMatch[2].trim();
+    const isComplexMacro =
+      aliasVal.split(" ").length >= 3 ||
+      /\b(?:hibern|suspend|musica|notificacion|primer plano|brillo|focus|visual studio|apaga|prende)\b/.test(
+        aliasVal,
+      );
+    if (isComplexMacro) {
+      await teachNovaPattern(aliasKey, "custom_macro", aliasVal);
+      return {
+        ok: true,
+        reply: `¡Memorizado, Hebert! Guardé "${aliasKey}" en mi base de conocimiento. Cuando lo digas, ejecutaré exactamente esa rutina.`,
+      };
+    }
     cachedKb.aliases[aliasKey] = aliasVal;
     await getBridge()?.kb_save(cachedKb).catch(() => {});
     return {
       ok: true,
       reply: `¡Aprendido! Ya guardé en mi memoria que "${aliasKey}" es "${aliasVal}".`,
     };
+  }
+
+  // 0b. Hibernar laptop directamente ("hiberna la laptop", "modo hibernar", "pon hibernacion")
+  if (/\b(?:hiberna|hibernar|hibernacion)\b/.test(q)) {
+    await api?.system_action("hibernate");
+    return { ok: true, reply: "Entendido, Hebert. Hibernando tu laptop ahora." };
   }
 
   // 0b. Reemplaza alias aprendidos por el usuario dentro de la oración

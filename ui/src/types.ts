@@ -146,7 +146,8 @@ export type NovaToolId =
   | "modo_universidad"
   | "modo_descanso"
   | "briefing"
-  | "smart_home";
+  | "smart_home"
+  | "custom_macro";
 
 export interface LearnedPattern {
   phrase: string;
@@ -181,6 +182,7 @@ export interface IslandConfig {
   codingMusic?: string;
   hudSounds?: boolean;
   greetOnStart?: boolean;
+  personalityMode?: "adaptive" | "jarvis" | "friendly" | "executive";
   smartHomeWebhook?: string;
   voiceName: string;
   aiBrainEnabled?: boolean;
@@ -348,6 +350,7 @@ export interface GlassIslandApi {
     text: string,
     voice?: string,
     geminiApiKey?: string,
+    ttsStyle?: string,
   ) => Promise<{ audio?: string; voice?: string; engine?: string }>;
   clone_jarvis_ref: (
     geminiVoice?: string,
@@ -365,7 +368,7 @@ export interface GlassIslandApi {
   voice_mute_for: (seconds: number) => Promise<{ ok?: boolean }>;
   voice_set_engine: (useWhisper: boolean) => Promise<{ ok?: boolean; whisper?: boolean }>;
   on_voice_event: (
-    cb: (msg: { event: string; text?: string; active?: boolean; message?: string }) => void,
+    cb: (msg: { event: string; text?: string; active?: boolean; message?: string; tone?: "urgent" | "calm" | "normal" }) => void,
   ) => () => void;
   load_config: () => Promise<Partial<IslandConfig>>;
   save_config: (data: IslandConfig) => Promise<boolean>;

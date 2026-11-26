@@ -41,6 +41,7 @@ import focusCoverArt from "./assets/focus-cover.png";
 import laptopCoverArt from "./assets/laptop-cover.png";
 import { extractBrandColorFromIcon } from "./utils/extractColor";
 import {
+  detectUserAttitude,
   executeNovaTool,
   executeSubuCommand,
   extractWakeCommand,
@@ -54,6 +55,7 @@ import {
   VOICE_PROFILES,
   type FolderChoice,
 } from "./utils/subuCommands";
+import { adaptReplyToPersonality, type PersonalityMode } from "./utils/novaPersonality";
 import { playDoneChime, playThinkChime, playWakeChime } from "./utils/hudSounds";
 import {
   DEFAULT_CONFIG,
@@ -481,6 +483,8 @@ export default function App() {
   const [listening, setListening] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [micReady, setMicReady] = useState(false);
+  const [attitudeBadge, setAttitudeBadge] = useState<string | null>(null);
+  const lastAcousticToneRef = useRef<"urgent" | "calm" | "normal">("normal");
   const hoveringRef = useRef(false);
   const expandedRef = useRef(false);
   const clearVoiceTimerRef = useRef<number | null>(null);
@@ -1054,17 +1058,31 @@ export default function App() {
       setCodingMusic: (song) => setConfig((p) => ({ ...p, codingMusic: song })),
       setGlassDropUrl: (url) => setGlassDropUrl(url),
       smartHomeWebhook: config.smartHomeWebhook || "",
+      personalityMode: config.personalityMode || "adaptive",
+      acousticTone: lastAcousticToneRef.current,
       aiBrainEnabled: config.aiBrainEnabled !== false,
       geminiApiKey: config.geminiApiKey || "",
       ollamaModel: config.ollamaModel || "qwen2.5:7b",
     });
-    setSubuReply(res.reply);
+    const attProfile = detectUserAttitude(
+      clean,
+      lastAcousticToneRef.current,
+      config.personalityMode || "adaptive",
+    );
+    lastAcousticToneRef.current = "normal";
+    const finalReply = adaptReplyToPersonality(
+      res.reply,
+      attProfile,
+      config.personalityMode || "adaptive",
+    );
+    setAttitudeBadge(attProfile.badge);
+    setSubuReply(finalReply);
     setUnknownPhrase(res.unknownPhrase ?? null);
     setFolderChoices(res.folderChoices ?? []);
     setKbLearnedCount(getNovaKbStats().learnedCount);
     if (res.ok) {
       playDoneChime(config.hudSounds !== false);
-      triggerBurst("happy", 1400);
+      triggerBurst(attProfile.robotMood === "sleepy" ? "idle" : attProfile.robotMood, 1600);
       setGreenGlow(true);
       window.setTimeout(() => setGreenGlow(false), 1600);
     }
@@ -1105,7 +1123,7 @@ export default function App() {
 
     if (config.voiceEnabled !== false) {
       void speakAsSubu(
-        res.reply,
+        finalReply,
         true,
         config.voiceName || "en-US-EmmaMultilingualNeural",
         () => setSpeaking(true),
@@ -1114,6 +1132,7 @@ export default function App() {
           scheduleCleanReset();
         },
         config.geminiApiKey || "",
+        attProfile.ttsStyle,
       );
     } else {
       scheduleCleanReset();
@@ -1360,6 +1379,7 @@ export default function App() {
       } else if (msg.event === "heard" && msg.text) {
         const heardText = msg.text.trim();
         if (!heardText) return;
+        lastAcousticToneRef.current = msg.tone || "normal";
         const curCfg = configRef.current;
         if (curCfg.alwaysListen === false) return;
         const assistantName = curCfg.assistantName?.trim() || "Hera";
@@ -1803,8 +1823,13 @@ export default function App() {
                   {subuReply && (
                     <div style={{ fontSize: 11.5, color: "#7dd3fc" }}>
                       <strong>{config.assistantName || "Nova"}:</strong> {subuReply}
+                      {attitudeBadge && (
+                        <span style={{ opacity: 0.72, fontSize: 10, marginLeft: 8 }}>
+                          · {attitudeBadge}
+                        </span>
+                      )}
                       {kbLearnedCount > 0 && (
-                        <span style={{ opacity: 0.65, fontSize: 10, marginLeft: 8 }}>
+                        <span style={{ opacity: 0.65, fontSize: 10, marginLeft: 6 }}>
                           · 🧠 {kbLearnedCount} aprendidos
                         </span>
                       )}
@@ -3529,6 +3554,23 @@ export default function App() {
                           }
                           placeholder="Gemini API Key (para IA + Voz Gemini Pro TTS)"
                         />
+                        <select
+                          className="glass-input"
+                          style={{ width: 122, padding: "5px 6px", fontSize: 10.5 }}
+                          value={config.personalityMode || "adaptive"}
+                          onChange={(e) =>
+                            setConfig((p) => ({
+                              ...p,
+                              personalityMode: e.target.value as PersonalityMode,
+                            }))
+                          }
+                          title="Personalidad y adaptación de actitud de N.O.V.A."
+                        >
+                          <option value="adaptive" style={{ background: "#0f172a" }}>🎩 Jarvis Adaptativo</option>
+                          <option value="jarvis" style={{ background: "#0f172a" }}>🎩 Jarvis Clásico</option>
+                          <option value="friendly" style={{ background: "#0f172a" }}>😎 Cercano</option>
+                          <option value="executive" style={{ background: "#0f172a" }}>💼 Ejecutivo</option>
+                        </select>
                         <input
                           className="glass-input"
                           style={{ width: 92, padding: "5px 7px", fontSize: 11 }}

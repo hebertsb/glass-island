@@ -284,6 +284,21 @@ def _listen_loop() -> None:
         emit({"event": "error", "message": str(exc)})
 
 
+def _analyze_acoustic_tone(audio_f32: np.ndarray, text: str) -> str:
+    """Estima energía vocal (RMS) y ritmo (palabras/seg) en 0% GPU para detectar tono apurado o calmado."""
+    try:
+        rms = float(np.sqrt(np.mean(audio_f32**2)))
+        dur = max(0.35, len(audio_f32) / float(SAMPLE_RATE))
+        wps = len(text.split()) / dur
+        if rms > 0.085 or wps > 3.6:
+            return "urgent"
+        if rms < 0.026 or wps < 1.55:
+            return "calm"
+    except Exception:
+        pass
+    return "normal"
+
+
 def _transcribe_async(recognizer: sr.Recognizer, audio_f32: np.ndarray) -> None:
     try:
         with _state_lock:
@@ -298,13 +313,16 @@ def _transcribe_async(recognizer: sr.Recognizer, audio_f32: np.ndarray) -> None:
             )
             text = " ".join(seg.text.strip() for seg in segments).strip()
             if text:
-                emit({"event": "heard", "text": text, "engine": "whisper"})
+                tone = _analyze_acoustic_tone(audio_f32, text)
+                emit({"event": "heard", "text": text, "engine": "whisper", "tone": tone})
                 return
         pcm = np.clip(audio_f32 * 32767.0, -32768, 32767).astype(np.int16)
         audio_data = _pcm_to_audio_data(pcm)
         text = recognizer.recognize_google(audio_data, language="es-BO")
         if text and text.strip():
-            emit({"event": "heard", "text": text.strip(), "engine": "google"})
+            clean = text.strip()
+            tone = _analyze_acoustic_tone(audio_f32, clean)
+            emit({"event": "heard", "text": clean, "engine": "google", "tone": tone})
     except sr.UnknownValueError:
         pass
     except Exception:

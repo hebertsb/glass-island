@@ -738,6 +738,14 @@ app.whenReady().then(() => {
         spawn("rundll32.exe", ["powrprof.dll,SetSuspendState", "0,1,0"], { detached: true, stdio: "ignore" }).unref();
         return { ok: true, message: "Suspendiendo tu laptop." };
       }
+      if (act === "hibernate") {
+        spawn("shutdown.exe", ["/h"], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+        return { ok: true, message: "Hibernando tu laptop." };
+      }
+      if (act === "dnd") {
+        await shell.openExternal("ms-settings:quiethours");
+        return { ok: true, message: "Abriendo No Molestar para silenciar notificaciones." };
+      }
       if (act === "downloads") {
         await shell.openPath(path.join(os.homedir(), "Downloads"));
         return { ok: true, message: "Abriendo Descargas." };
@@ -1767,18 +1775,19 @@ app.whenReady().then(() => {
     return Buffer.concat([header, pcmBuf]);
   }
 
-  function synthesizeGeminiTts(text, geminiVoice, apiKey) {
+  function synthesizeGeminiTts(text, geminiVoice, apiKey, ttsStyle) {
     return new Promise((resolve) => {
       if (!apiKey || !text) {
         resolve(null);
         return;
       }
+      const styleCue = String(ttsStyle || "natural, sereno y seguro").trim();
       const body = JSON.stringify({
         contents: [
           {
             parts: [
               {
-                text: `Lee exactamente en voz alta en español latino natural y sereno (no agregues ni cambies palabras): "${text}"`,
+                text: `Lee exactamente en voz alta en español latino con tono ${styleCue} (no agregues ni cambies palabras): "${text}"`,
               },
             ],
           },
@@ -1921,7 +1930,7 @@ app.whenReady().then(() => {
     }
   });
 
-  ipcMain.handle("island:voice-speak", async (_e, text, voice, geminiApiKey) => {
+  ipcMain.handle("island:voice-speak", async (_e, text, voice, geminiApiKey, ttsStyle) => {
     const cleanText = String(text || "").trim();
     const requestedVoice = String(voice || "en-US-EmmaMultilingualNeural");
     if (!cleanText) return { audio: "", voice: requestedVoice };
@@ -1952,14 +1961,14 @@ app.whenReady().then(() => {
           return { audio: cloned.audio, voice: requestedVoice, engine: "clone-offline" };
         }
       }
-      // Si aún no está el clonador local o ref_wav, usa Brian HD grave como fallback instantáneo
+      // Si aún no está el clonador local o ref_wav, usa voz latina grave como fallback instantáneo
       return await callVoice(
-        { cmd: "speak", text: cleanText, voice: "en-US-BrianMultilingualNeural" },
+        { cmd: "speak", text: cleanText, voice: "es-MX-JorgeNeural" },
         12000,
       );
     }
 
-    // 3) Gemini 2.5 Flash Pro TTS con TLS Keep-Alive + guardado automático en caché
+    // 3) Gemini 2.5 Flash Pro TTS con TLS Keep-Alive + entonación dinámica según actitud + caché 0ms
     if (requestedVoice.startsWith("gemini:")) {
       const gVoice = requestedVoice.slice("gemini:".length).trim() || "Charon";
       const key = resolveGeminiKey(geminiApiKey);
@@ -1967,10 +1976,10 @@ app.whenReady().then(() => {
         callVoice({ cmd: "mute_for", seconds: Math.max(2.5, cleanText.length * 0.08) }, 1500).catch(
           () => {},
         );
-        let result = await synthesizeGeminiTts(cleanText, gVoice, key);
+        let result = await synthesizeGeminiTts(cleanText, gVoice, key, ttsStyle);
         if (!result?.dataUrl) {
           await new Promise((r) => setTimeout(r, 450));
-          result = await synthesizeGeminiTts(cleanText, gVoice, key);
+          result = await synthesizeGeminiTts(cleanText, gVoice, key, ttsStyle);
         }
         if (result?.dataUrl) {
           if (result.wavBuf) {

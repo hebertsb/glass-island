@@ -39,8 +39,8 @@ const api = {
     ipcRenderer.invoke("island:create-project", name, locationHint, openInCode),
   open_project_terminal: (query) => ipcRenderer.invoke("island:open-project-terminal", query),
   project_git_status: (query) => ipcRenderer.invoke("island:project-git-status", query),
-  voice_speak: (text, voice, geminiApiKey) =>
-    ipcRenderer.invoke("island:voice-speak", text, voice, geminiApiKey),
+  voice_speak: (text, voice, geminiApiKey, ttsStyle) =>
+    ipcRenderer.invoke("island:voice-speak", text, voice, geminiApiKey, ttsStyle),
   clone_jarvis_ref: (geminiVoice, geminiApiKey) =>
     ipcRenderer.invoke("island:clone-jarvis-ref", geminiVoice, geminiApiKey),
   get_disk_summary: () => ipcRenderer.invoke("island:get-disk-summary"),
