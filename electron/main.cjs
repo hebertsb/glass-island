@@ -729,7 +729,8 @@ app.whenReady().then(() => {
   ipcMain.handle("island:kb-load", () => {
     try {
       if (fs.existsSync(KB_FILE)) {
-        return JSON.parse(fs.readFileSync(KB_FILE, "utf8"));
+        const raw = fs.readFileSync(KB_FILE, "utf8").replace(/^\uFEFF/, "");
+        return JSON.parse(raw);
       }
     } catch {
       // ignore
@@ -1765,7 +1766,8 @@ app.whenReady().then(() => {
   ipcMain.handle("island:load-config", () => {
     try {
       if (fs.existsSync(CONFIG_FILE)) {
-        return JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8"));
+        const raw = fs.readFileSync(CONFIG_FILE, "utf8").replace(/^\uFEFF/, "");
+        return JSON.parse(raw);
       }
     } catch {
       // ignore
