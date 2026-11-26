@@ -209,6 +209,7 @@ export interface SubuContext {
   scheduleReminder?: (delayMs: number, message: string) => void;
   codingMusic?: string;
   setCodingMusic?: (song: string) => void;
+  setGlassDropUrl?: (url: string | null) => void;
   smartHomeWebhook?: string;
   aiBrainEnabled?: boolean;
   geminiApiKey?: string;
@@ -872,7 +873,12 @@ export async function executeSubuCommand(
     return { ok: true, reply };
   }
 
-  // 1h) CONECTAR CELULAR POR WI-FI (GlassDrop genérico Android/iOS)
+  // 1h) CONECTAR / DESCONECTAR CELULAR POR WI-FI (GlassDrop genérico Android/iOS)
+  if (q.includes("desconecta mi celular") || q.includes("apaga glassdrop") || q.includes("cierra glassdrop")) {
+    await api?.glassdrop_stop?.().catch(() => {});
+    ctx.setGlassDropUrl?.(null);
+    return { ok: true, reply: "Listo, Hebert. Cerré la conexión Wi-Fi de GlassDrop." };
+  }
   if (
     q.includes("conecta mi celular") ||
     q.includes("conectar celular") ||
@@ -882,6 +888,9 @@ export async function executeSubuCommand(
   ) {
     ctx.setActiveTab?.("shelf");
     const res = await api?.glassdrop_start?.().catch(() => null);
+    if (res?.running && res.url) {
+      ctx.setGlassDropUrl?.(res.url);
+    }
     const reply = res?.running
       ? "Listo, Hebert. Activé GlassDrop en el Estante. Escanea el código QR con cualquier celular en tu mismo Wi-Fi para enviar o recibir archivos."
       : "Abrí el Estante. Pulsa Enviar o Recibir Celular para mostrar el código QR Wi-Fi.";

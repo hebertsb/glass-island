@@ -1050,6 +1050,7 @@ export default function App() {
       },
       codingMusic: config.codingMusic || "Avicii Levels",
       setCodingMusic: (song) => setConfig((p) => ({ ...p, codingMusic: song })),
+      setGlassDropUrl: (url) => setGlassDropUrl(url),
       smartHomeWebhook: config.smartHomeWebhook || "",
       aiBrainEnabled: config.aiBrainEnabled !== false,
       geminiApiKey: config.geminiApiKey || "",
