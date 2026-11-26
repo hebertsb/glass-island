@@ -148,7 +148,7 @@ export function detectUserAttitude(
     badge: "🎩 J.A.R.V.I.S.",
     ttsStyle: "natural, sereno, elegante y seguro como J.A.R.V.I.S.",
     robotMood: "happy",
-    llmHint: "Responde como J.A.R.V.I.S.: elegante, conciso, natural y atento con Hebert.",
+    llmHint: "Responde como J.A.R.V.I.S.: elegante, conciso, natural y atento con el usuario.",
   };
 }
 
@@ -160,8 +160,10 @@ export function adaptReplyToPersonality(
   reply: string,
   profile: AttitudeProfile,
   mode: PersonalityMode = "adaptive",
+  bossName = "Jefe",
 ): string {
   const clean = reply.trim();
+  const boss = bossName.trim() || "Jefe";
   if (!clean) return clean;
   if (profile.attitude === "stressed" || mode === "executive") {
     return clean
@@ -169,16 +171,16 @@ export function adaptReplyToPersonality(
       .replace(/\s+¿En qué [^?]+\?$/i, "");
   }
   if (profile.attitude === "tired") {
-    return clean.replace(/^(?:¡De una!|¡Claro!)\s+/i, "Tranquilo, Hebert. ");
+    return clean.replace(/^(?:¡De una!|¡Claro!)\s+/i, `Tranquilo, ${boss}. `);
   }
   if (profile.attitude === "excited") {
-    return clean.replace(/^Entendido,\s+/i, "¡Con todo, Hebert! ");
+    return clean.replace(/^Entendido,\s+/i, `¡Con todo, ${boss}! `);
   }
   if (profile.attitude === "friendly" || mode === "friendly") {
     return clean.replace(/^Entendido,\s+/i, "¡De una, jefe! ");
   }
   if (mode === "jarvis") {
-    return clean.replace(/^(?:¡De una!|¡Belleza!)\s+/i, "A la orden, señor. ");
+    return clean.replace(/^(?:¡De una!|¡Belleza!)\s+/i, `A la orden, ${boss}. `);
   }
   return clean;
 }

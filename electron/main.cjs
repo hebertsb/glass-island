@@ -2402,7 +2402,7 @@ app.whenReady().then(() => {
       return { ok: false, error: "Pega primero tu Gemini API Key en Ajustes." };
     }
     const sampleText =
-      "Buenas noches, Hebert. Soy tu asistente personal operativo. Todos los sistemas están en línea, la temperatura es agradable y tus proyectos están listos para continuar cuando tú indiques.";
+      "Buenas noches, Jefe. Soy tu asistente personal operativo. Todos los sistemas están en línea, la temperatura es agradable y tus proyectos están listos para continuar cuando tú indiques.";
     const res = await synthesizeGeminiTts(sampleText, gVoice, key);
     if (!res?.wavBuf) {
       return { ok: false, error: "No se pudo generar el clip de referencia con Gemini TTS." };

@@ -178,6 +178,8 @@ export interface IslandConfig {
   autoStart?: boolean;
   showMouth: boolean;
   assistantName: string;
+  userName?: string;
+  userOnboarded?: boolean;
   voiceEnabled: boolean;
   alwaysListen: boolean;
   whisperOffline?: boolean;
@@ -214,6 +216,8 @@ export const DEFAULT_CONFIG: IslandConfig = {
   autoHide: true,
   showMouth: false,
   assistantName: "Nova",
+  userName: "",
+  userOnboarded: false,
   voiceEnabled: true,
   alwaysListen: true,
   voiceName: "es-BO-SofiaNeural",

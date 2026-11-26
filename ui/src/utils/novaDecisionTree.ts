@@ -43,6 +43,7 @@ export interface ContextWindowState {
   pendingConfirm: PendingConfirmation | null;
   pendingFolders: FolderChoice[];
   pendingFoldersUntil: number;
+  pendingNameUntil: number;
 }
 
 const contextState: ContextWindowState = {
@@ -53,7 +54,20 @@ const contextState: ContextWindowState = {
   pendingConfirm: null,
   pendingFolders: [],
   pendingFoldersUntil: 0,
+  pendingNameUntil: 0,
 };
+
+export function setPendingNameRegistration(active: boolean): void {
+  contextState.pendingNameUntil = active ? Date.now() + 90_000 : 0;
+}
+
+export function isPendingNameRegistration(): boolean {
+  if (contextState.pendingNameUntil > 0 && Date.now() <= contextState.pendingNameUntil) {
+    return true;
+  }
+  contextState.pendingNameUntil = 0;
+  return false;
+}
 
 export function setPendingConfirm(pending: PendingConfirmation | null): void {
   contextState.pendingConfirm = pending;
@@ -83,7 +97,8 @@ export function hasActiveConversationExpectation(): boolean {
   const now = Date.now();
   const hasFolders = contextState.pendingFolders.length > 0 && now <= contextState.pendingFoldersUntil;
   const hasConfirm = Boolean(contextState.pendingConfirm && now - contextState.pendingConfirm.at <= 45_000);
-  return hasFolders || hasConfirm;
+  const hasName = contextState.pendingNameUntil > 0 && now <= contextState.pendingNameUntil;
+  return hasFolders || hasConfirm || hasName;
 }
 
 export function pushContextTurn(

@@ -18,12 +18,14 @@ import {
   getContextWindow,
   getRecentTurnsForLlm,
   hasActiveConversationExpectation,
+  isPendingNameRegistration,
   predictIntentWithContext,
   pushContextTurn,
   resolveContextualFollowup,
   setContextCity,
   setPendingConfirm,
   setPendingFolders,
+  setPendingNameRegistration,
   trainDecisionTree,
   type FolderChoice,
 } from "./novaDecisionTree";
@@ -38,6 +40,7 @@ import {
 export {
   hasActiveConversationExpectation,
   setPendingFolders,
+  setPendingNameRegistration,
   detectUserAttitude,
   type FolderChoice,
   type AttitudeProfile,
@@ -89,6 +92,17 @@ export function getNovaKbStats(): { learnedCount: number; totalCommands: number 
     learnedCount: cachedKb.patterns.length + Object.keys(cachedKb.aliases).length,
     totalCommands: cachedKb.stats.totalCommands,
   };
+}
+
+export function getNovaKbPatterns() {
+  return [...cachedKb.patterns];
+}
+
+export async function deleteNovaPattern(phrase: string): Promise<void> {
+  const clean = norm(phrase);
+  cachedKb.patterns = cachedKb.patterns.filter((p) => norm(p.phrase) !== clean);
+  trainDecisionTree(cachedKb);
+  await getBridge()?.kb_save(cachedKb).catch(() => {});
 }
 
 export async function teachNovaPattern(
@@ -151,6 +165,7 @@ export async function executeNovaTool(
 ): Promise<SubuResult> {
   const api = getBridge();
   const cleanArg = arg.trim();
+  const boss = ctx.userName?.trim() || "Jefe";
   if (tool === "play_music") {
     const res = await api?.play_media_query(cleanArg, "youtube");
     return {
@@ -186,7 +201,7 @@ export async function executeNovaTool(
     return res?.ok
       ? {
           ok: true,
-          reply: `Listo, Hebert. Creé la carpeta ${res.folderName} en ${res.baseName} y la abrí en Visual Studio Code.`,
+          reply: `Listo, ${boss}. Creé la carpeta ${res.folderName} en ${res.baseName} y la abrí en Visual Studio Code.`,
         }
       : { ok: false, reply: `No pude crear el proyecto ${cleanArg}.` };
   }
@@ -219,11 +234,11 @@ export async function executeNovaTool(
     const doneSteps: string[] = [];
     if (/\b(?:hibernar|hibernacion|hiberna)\b/.test(spec)) {
       await api?.system_action("hibernate");
-      return { ok: true, reply: "Hibernando tu laptop ahora, Hebert." };
+      return { ok: true, reply: `Hibernando tu laptop ahora, ${boss}.` };
     }
     if (/\b(?:suspender|suspende|dormir)\b/.test(spec)) {
       await api?.system_action("sleep");
-      return { ok: true, reply: "Suspendiendo tu laptop ahora, Hebert." };
+      return { ok: true, reply: `Suspendiendo tu laptop ahora, ${boss}.` };
     }
     if (/\b(?:cero musica|sin musica|pausa.*musica|quita.*musica|silencia|apaga.*musica)\b/.test(spec)) {
       await api?.close_app("youtube").catch(() => {});
@@ -255,7 +270,7 @@ export async function executeNovaTool(
       doneSteps.push(`brillo al ${lvl}%`);
     }
     if (doneSteps.length > 0) {
-      return { ok: true, reply: `Listo, Hebert. Ejecuté tu rutina: ${doneSteps.join(", ")}.` };
+      return { ok: true, reply: `Listo, ${boss}. Ejecuté tu rutina: ${doneSteps.join(", ")}.` };
     }
     // Si la rutina tiene otras instrucciones personalizadas, ejecútala directamente como comando (sin loop KB)
     return await executeSubuCommand(cleanArg, ctx, true);
@@ -266,6 +281,8 @@ export async function executeNovaTool(
 
 export interface SubuContext {
   assistantName: string;
+  userName?: string;
+  setUserName?: (name: string) => void;
   installedApps: InstalledAppEntry[];
   appWidgets: AppWidget[];
   shortcuts: ShortcutItem[];
@@ -498,6 +515,7 @@ export async function executeSubuCommand(
   const api = getBridge();
   const original = rawInput.trim();
   const name = ctx.assistantName?.trim() || "Nova";
+  const boss = ctx.userName?.trim() || "Jefe";
   if (!original) return { ok: false, reply: "Dime qué necesitas que haga." };
 
   const wake = extractWakeCommand(original, name);
@@ -519,6 +537,36 @@ export async function executeSubuCommand(
 
   // Limpia frases de cortesía como "quiero que ..." / "puedes ..."
   q = q.replace(/^(?:quiero que|puedes|podes|necesito que|por favor)\s+/, "").trim();
+
+  // 0a0. Registro del nombre del dueño (primera vez o en cualquier momento: "me llamo Carlos", "llámame Jefe", `regístrame como ${boss}`)
+  const explicitNameMatch = q.match(
+    /^(?:me llamo|mi nombre es|llamame|dime|registra(?:me)?\s+(?:como|con el nombre)|soy)\s+([a-zñáéíóú\s]{2,28})$/i,
+  );
+  if (explicitNameMatch || isPendingNameRegistration()) {
+    const rawCandidate = explicitNameMatch ? explicitNameMatch[1] : q;
+    const cleaned = rawCandidate
+      .replace(/^(?:con el nombre|como|me llamo|mi nombre es|soy|llamame|dime|ponme|registra(?:me)?)\s+/gi, "")
+      .trim();
+    // Si estaba esperando el nombre inicial y el usuario dijo algo corto (1-3 palabras sin verbo de comando)
+    if (
+      cleaned.length >= 2 &&
+      cleaned.split(" ").length <= 3 &&
+      (explicitNameMatch || !COMMAND_HINT_RE.test(cleaned))
+    ) {
+      const prettyBoss = cleaned
+        .split(" ")
+        .filter(Boolean)
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(" ");
+      setPendingNameRegistration(false);
+      ctx.setUserName?.(prettyBoss);
+      const reply = `¡Perfecto, ${prettyBoss}! Quedas registrado en mi base como mi jefe oficial. ¿En qué trabajamos hoy?`;
+      pushContextTurn("assistant", reply, "chat", prettyBoss);
+      return { ok: true, reply };
+    }
+    // Si dijo una orden real en vez de su nombre, cancela la espera del nombre y sigue ejecutando la orden
+    setPendingNameRegistration(false);
+  }
 
   // 0a. Selección por voz cuando Nova mostró carpetas parecidas ("abre la segunda", "la del medio", "la 1", "la última")
   // Protegido para no interceptar órdenes largas de archivos como "abre el último PDF que descargué"
@@ -606,7 +654,7 @@ export async function executeSubuCommand(
       await teachNovaPattern(aliasKey, "custom_macro", aliasVal);
       return {
         ok: true,
-        reply: `¡Memorizado, Hebert! Guardé "${aliasKey}" en mi base de conocimiento. Cuando lo digas, ejecutaré exactamente esa rutina.`,
+        reply: `¡Memorizado, ${boss}! Guardé "${aliasKey}" en mi base de conocimiento. Cuando lo digas, ejecutaré exactamente esa rutina.`,
       };
     }
     cachedKb.aliases[aliasKey] = aliasVal;
@@ -726,7 +774,7 @@ export async function executeSubuCommand(
   // 0b. Hibernar laptop directamente ("hiberna la laptop", "modo hibernar", "pon hibernacion")
   if (/\b(?:hiberna|hibernar|hibernacion)\b/.test(q)) {
     await api?.system_action("hibernate");
-    return { ok: true, reply: "Entendido, Hebert. Hibernando tu laptop ahora." };
+    return { ok: true, reply: `Entendido, ${boss}. Hibernando tu laptop ahora.` };
   }
 
   // 0b. Reemplaza alias aprendidos por el usuario dentro de la oración (solo si no es comando de sistema/proyecto)
@@ -880,8 +928,8 @@ export async function executeSubuCommand(
         const res = await api?.create_project(projName, locHint, true);
         if (res?.ok) {
           const reply = res.existed
-            ? `La carpeta ${res.folderName} ya existía en ${res.baseName}, Hebert. Ya te la abrí en Visual Studio Code.`
-            : `Listo, Hebert. Creé la carpeta ${res.folderName} en ${res.baseName} y ya la abrí en Visual Studio Code.`;
+            ? `La carpeta ${res.folderName} ya existía en ${res.baseName}, ${boss}. Ya te la abrí en Visual Studio Code.`
+            : `Listo, ${boss}. Creé la carpeta ${res.folderName} en ${res.baseName} y ya la abrí en Visual Studio Code.`;
           pushContextTurn("assistant", reply, "create_project", res.folderName);
           return { ok: true, reply };
         }
@@ -956,7 +1004,7 @@ export async function executeSubuCommand(
     await api?.set_brightness(60);
     await api?.play_media_query("musica chill relajante", "youtube");
     ctx.setActiveTab?.("music");
-    const reply = "Modo descanso activado, Hebert. Focus pausado, brillo al 60 y música suave lista.";
+    const reply = `Modo descanso activado, ${boss}. Focus pausado, brillo al 60 y música suave lista.`;
     pushContextTurn("assistant", reply, "play_music");
     return { ok: true, reply };
   }
@@ -987,7 +1035,7 @@ export async function executeSubuCommand(
         : pending === 1
           ? "Tienes 1 tarea pendiente."
           : `Tienes ${pending} tareas pendientes.`;
-    const reply = `${greet}, Hebert. Son las ${timeStr}. En ${ctx.weather.city} hace ${ctx.weather.temp_c} grados, ${ctx.weather.condition}. ${tasksPart} ${diskPart} ¿En qué proyecto trabajamos hoy?`;
+    const reply = `${greet}, ${boss}. Son las ${timeStr}. En ${ctx.weather.city} hace ${ctx.weather.temp_c} grados, ${ctx.weather.condition}. ${tasksPart} ${diskPart} ¿En qué proyecto trabajamos hoy?`;
     ctx.setActiveTab?.("home");
     pushContextTurn("assistant", reply, "briefing");
     return { ok: true, reply };
@@ -1001,8 +1049,8 @@ export async function executeSubuCommand(
     const topTasks = pending.slice(0, 2).map((t) => t.text).join(" y ");
     const reply =
       pending.length > 0
-        ? `Modo semana activado, Hebert. Abriendo tu calendario. Tus prioridades pendientes son: ${topTasks}.`
-        : "Modo semana activado, Hebert. Abriendo Google Calendar y tus notas para planificar.";
+        ? `Modo semana activado, ${boss}. Abriendo tu calendario. Tus prioridades pendientes son: ${topTasks}.`
+        : `Modo semana activado, ${boss}. Abriendo Google Calendar y tus notas para planificar.`;
     pushContextTurn("assistant", reply, "tasks");
     return { ok: true, reply };
   }
@@ -1018,8 +1066,8 @@ export async function executeSubuCommand(
     await api?.play_media_query("lofi chill night beats", "youtube");
     ctx.setActiveTab?.("home");
     const reply = ctx.smartHomeWebhook
-      ? "Modo casa activado, Hebert. Luces ajustadas, brillo al 40 y música ambiente lista."
-      : "Modo casa activado, Hebert. Brillo suave al 40, tema oscuro y música ambiente lista.";
+      ? `Modo casa activado, ${boss}. Luces ajustadas, brillo al 40 y música ambiente lista.`
+      : `Modo casa activado, ${boss}. Brillo suave al 40, tema oscuro y música ambiente lista.`;
     pushContextTurn("assistant", reply, "mode_home");
     return { ok: true, reply };
   }
@@ -1037,8 +1085,8 @@ export async function executeSubuCommand(
     const res = await api?.smart_home(ctx.smartHomeWebhook, action).catch(() => ({ ok: false }));
     const reply = res?.ok
       ? turnOn
-        ? "Listo, Hebert. Encendiendo las luces."
-        : "Listo, Hebert. Apagando las luces."
+        ? `Listo, ${boss}. Encendiendo las luces.`
+        : `Listo, ${boss}. Apagando las luces.`
       : "No pude comunicarme con el webhook de tus luces. Revisa la URL en Ajustes.";
     pushContextTurn("assistant", reply, "smart_home", action);
     return { ok: Boolean(res?.ok), reply };
@@ -1047,7 +1095,7 @@ export async function executeSubuCommand(
   // 1g) MODO JUEGO / PANTALLA COMPLETA ("modo juego", "modo gamer")
   if (q.includes("modo juego") || q.includes("modo gamer")) {
     await api?.quick_control("power_high").catch(() => {});
-    const reply = "Modo juego activado, Hebert. Rendimiento al máximo y me ocultaré en pantalla completa hasta que me llames o subas el cursor arriba.";
+    const reply = `Modo juego activado, ${boss}. Rendimiento al máximo y me ocultaré en pantalla completa hasta que me llames o subas el cursor arriba.`;
     pushContextTurn("assistant", reply, "mode_game");
     return { ok: true, reply };
   }
@@ -1056,7 +1104,7 @@ export async function executeSubuCommand(
   if (q.includes("desconecta mi celular") || q.includes("apaga glassdrop") || q.includes("cierra glassdrop")) {
     await api?.glassdrop_stop?.().catch(() => {});
     ctx.setGlassDropUrl?.(null);
-    return { ok: true, reply: "Listo, Hebert. Cerré la conexión Wi-Fi de GlassDrop." };
+    return { ok: true, reply: `Listo, ${boss}. Cerré la conexión Wi-Fi de GlassDrop.` };
   }
   if (
     q.includes("conecta mi celular") ||
@@ -1071,7 +1119,7 @@ export async function executeSubuCommand(
       ctx.setGlassDropUrl?.(res.url);
     }
     const reply = res?.running
-      ? "Listo, Hebert. Activé GlassDrop en el Estante. Escanea el código QR con cualquier celular en tu mismo Wi-Fi para enviar o recibir archivos."
+      ? `Listo, ${boss}. Activé GlassDrop en el Estante. Escanea el código QR con cualquier celular en tu mismo Wi-Fi para enviar o recibir archivos.`
       : "Abrí el Estante. Pulsa Enviar o Recibir Celular para mostrar el código QR Wi-Fi.";
     pushContextTurn("assistant", reply, "glassdrop");
     return { ok: true, reply, keepOpen: true };
@@ -1127,7 +1175,7 @@ export async function executeSubuCommand(
           assistantName: name,
           geminiApiKey: ctx.geminiApiKey,
           ollamaModel: ctx.ollamaModel || "qwen2.5:7b",
-          contextSummary: "Análisis inteligente del portapapeles de Hebert.",
+          contextSummary: `Análisis inteligente del portapapeles de ${boss}.`,
         })
         .catch(() => null);
       if (llm?.ok && llm.data?.reply) {
@@ -1215,7 +1263,7 @@ export async function executeSubuCommand(
     const greet = hr < 12 ? "Buenos días" : hr < 19 ? "Buenas tardes" : "Buenas noches";
     return {
       ok: true,
-      reply: `${greet}, Hebert. Aquí ${name}. ¿En qué trabajamos hoy?`,
+      reply: `${greet}, ${boss}. Aquí ${name}. ¿En qué trabajamos hoy?`,
     };
   }
   if (q.includes("quien eres") || q.includes("quien sos") || q.includes("como te llamas") || q.includes("que significas")) {
@@ -1227,7 +1275,7 @@ export async function executeSubuCommand(
   if (/^(gracias|muchas gracias|mil gracias|joya|belleza|de una|perfecto|genial|excelente|listo|chau|nos vemos)$/.test(q)) {
     return {
       ok: true,
-      reply: "A la orden, Hebert. Aquí sigo cuando me necesites.",
+      reply: `A la orden, ${boss}. Aquí sigo cuando me necesites.`,
     };
   }
 
@@ -1241,7 +1289,7 @@ export async function executeSubuCommand(
       ctx.setActiveTab?.("notes");
       return {
         ok: true,
-        reply: "Claro, Hebert. Dime qué tarea o nota quieres que anote, y si quieres también a qué hora te aviso.",
+        reply: `Claro, ${boss}. Dime qué tarea o nota quieres que anote, y si quieres también a qué hora te aviso.`,
         keepOpen: true,
       };
     }
@@ -1322,12 +1370,12 @@ export async function executeSubuCommand(
 
     if (scheduledMs !== null && scheduledMs > 0 && scheduledMs <= 24 * 3600_000) {
       ctx.scheduleReminder?.(scheduledMs, nice);
-      const reply = `Listo, Hebert. Anoté tu tarea "${nice}" y programé tu alarma para las ${timeLabel}. Te avisaré cuando sea hora.`;
+      const reply = `Listo, ${boss}. Anoté tu tarea "${nice}" y programé tu alarma para las ${timeLabel}. Te avisaré cuando sea hora.`;
       pushContextTurn("assistant", reply, "tasks", nice);
       return { ok: true, reply };
     }
 
-    const reply = `Listo, Hebert. Anoté en tus tareas: ${nice}.`;
+    const reply = `Listo, ${boss}. Anoté en tus tareas: ${nice}.`;
     pushContextTurn("assistant", reply, "tasks", nice);
     return { ok: true, reply };
   }
@@ -1785,7 +1833,7 @@ export async function executeSubuCommand(
       .slice(0, 6)
       .map((f) => `${f.name} [${f.folder}]`)
       .join(", ");
-    const ctxSummary = `Usuario: ${sysCtx?.userName || "Hebert"}, Monitores: ${sysCtx?.displaysCount || 1}, Ventanas abiertas: ${openWinsStr || "ninguna"}, Archivos recientes: ${recentFilesStr || "ninguno"}, Ciudad: ${getContextWindow().lastCity}, Batería ${ctx.telemetry.battery_percent}%, CPU ${ctx.telemetry.cpu_percent}%, RAM ${ctx.telemetry.ram_percent}%, Disco C libre ${ctx.telemetry.disk_c_free_gb} GB, Clima ${ctx.weather.temp_c}°C en ${ctx.weather.city}, Tareas pendientes: ${pendingList || "ninguna"}. Historial reciente: ${recentHist || "inicio de charla"}.`;
+    const ctxSummary = `Usuario: ${ctx.userName?.trim() || sysCtx?.userName || "Jefe"}, Monitores: ${sysCtx?.displaysCount || 1}, Ventanas abiertas: ${openWinsStr || "ninguna"}, Archivos recientes: ${recentFilesStr || "ninguno"}, Ciudad: ${getContextWindow().lastCity}, Batería ${ctx.telemetry.battery_percent}%, CPU ${ctx.telemetry.cpu_percent}%, RAM ${ctx.telemetry.ram_percent}%, Disco C libre ${ctx.telemetry.disk_c_free_gb} GB, Clima ${ctx.weather.temp_c}°C en ${ctx.weather.city}, Tareas pendientes: ${pendingList || "ninguna"}. Historial reciente: ${recentHist || "inicio de charla"}.`;
     const llm = await api
       .nova_llm_route({
         utterance: q,
@@ -1886,7 +1934,7 @@ export async function executeSubuCommand(
         );
       }
 
-      const llmReply = llm.data.reply || "Listo, Hebert.";
+      const llmReply = llm.data.reply || `Listo, ${boss}.`;
       pushContextTurn(
         "assistant",
         llmReply,

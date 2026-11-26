@@ -41,14 +41,17 @@ import focusCoverArt from "./assets/focus-cover.png";
 import laptopCoverArt from "./assets/laptop-cover.png";
 import { extractBrandColorFromIcon } from "./utils/extractColor";
 import {
+  deleteNovaPattern,
   detectUserAttitude,
   executeNovaTool,
   executeSubuCommand,
   extractWakeCommand,
+  getNovaKbPatterns,
   getNovaKbStats,
   hasActiveConversationExpectation,
   loadNovaKb,
   setPendingFolders,
+  setPendingNameRegistration,
   speakAsSubu,
   teachNovaAlias,
   teachNovaPattern,
@@ -1015,6 +1018,9 @@ export default function App() {
     const name = config.assistantName?.trim() || "Nova";
     const res = await executeSubuCommand(clean, {
       assistantName: name,
+      userName: config.userName?.trim() || "",
+      setUserName: (newBoss) =>
+        setConfig((p) => ({ ...p, userName: newBoss.trim(), userOnboarded: true })),
       installedApps,
       appWidgets: config.appWidgets ?? [],
       shortcuts: config.shortcuts,
@@ -1056,7 +1062,8 @@ export default function App() {
           setExpanded(true);
           setSubuOpen(true);
           getBridge()?.set_ignore_mouse(false).catch(() => {});
-          const alertMsg = `¡Hebert! Ya es hora de realizar tu tarea programada: ${message}.`;
+          const boss = configRef.current.userName?.trim() || "Jefe";
+          const alertMsg = `¡${boss}! Ya es hora de realizar tu tarea programada: ${message}.`;
           setSubuReply(alertMsg);
           triggerBurst("excited", 3000);
           setGreenGlow(true);
@@ -1091,6 +1098,7 @@ export default function App() {
       res.reply,
       attProfile,
       config.personalityMode || "adaptive",
+      config.userName?.trim() || "Jefe",
     );
     setAttitudeBadge(attProfile.badge);
     setSubuReply(finalReply);
@@ -1206,10 +1214,11 @@ export default function App() {
           dropBatchRef.current.names = [];
           dropBatchRef.current.timer = null;
           const cfg = configRef.current;
+          const boss = cfg.userName?.trim() || "Jefe";
           const spoken =
             names.length === 1
-              ? `Hebert, recibiste un archivo desde tu celular: ${names[0].replace(/\.[^.]+$/, "")}.`
-              : `Hebert, recibiste ${names.length} archivos desde tu celular.`;
+              ? `${boss}, recibiste un archivo desde tu celular: ${names[0].replace(/\.[^.]+$/, "")}.`
+              : `${boss}, recibiste ${names.length} archivos desde tu celular.`;
           setSubuReply(spoken);
           if (cfg.voiceEnabled !== false) {
             void speakAsSubu(
@@ -1302,7 +1311,17 @@ export default function App() {
       if (cfg.greetOnStart === false || cfg.voiceEnabled === false) return;
       const hr = new Date().getHours();
       const greet = hr < 12 ? "Buenos días" : hr < 19 ? "Buenas tardes" : "Buenas noches";
-      const line = `${greet}, Hebert. Aquí ${cfg.assistantName || "Nova"}. ¿En qué trabajamos hoy?`;
+      const savedBoss = cfg.userName?.trim() || "";
+      const needsOnboarding = !cfg.userOnboarded && !savedBoss;
+      const line = needsOnboarding
+        ? `Hola, Jefe. Soy ${cfg.assistantName || "Nova"}, tu asistente operativo. Es la primera vez que trabajamos juntos: ¿con qué nombre quieres que te registre en mi base?`
+        : `${greet}, ${savedBoss || "Jefe"}. Aquí ${cfg.assistantName || "Nova"}. ¿En qué trabajamos hoy?`;
+      if (needsOnboarding) {
+        setPendingNameRegistration(true);
+        setExpanded(true);
+        setSubuOpen(true);
+        getBridge()?.set_ignore_mouse(false).catch(() => {});
+      }
       playWakeChime(cfg.hudSounds !== false);
       setSubuReply(line);
       void speakAsSubu(
@@ -1312,7 +1331,11 @@ export default function App() {
         () => setSpeaking(true),
         () => {
           setSpeaking(false);
-          window.setTimeout(() => setSubuReply(null), 2600);
+          if (needsOnboarding) {
+            setPendingNameRegistration(true);
+          } else {
+            window.setTimeout(() => setSubuReply(null), 2600);
+          }
         },
         cfg.geminiApiKey || "",
       );
@@ -1353,7 +1376,8 @@ export default function App() {
           setExpanded(true);
           setSubuOpen(true);
           getBridge()?.set_ignore_mouse(false).catch(() => {});
-          const alertMsg = `¡Hebert! Ya es hora de realizar tu tarea programada: ${message}.`;
+          const boss = configRef.current.userName?.trim() || "Jefe";
+          const alertMsg = `¡${boss}! Ya es hora de realizar tu tarea programada: ${message}.`;
           setSubuReply(alertMsg);
           triggerBurst("excited", 3000);
           setGreenGlow(true);
@@ -3626,13 +3650,27 @@ export default function App() {
                       <div className="glass-card-row" style={{ gap: 6, flexWrap: "wrap" }}>
                         <input
                           className="glass-input"
-                          style={{ width: 82, padding: "5px 8px", fontSize: 11.5 }}
+                          style={{ width: 76, padding: "5px 8px", fontSize: 11.5 }}
                           value={config.assistantName ?? "Nova"}
                           onChange={(e) =>
                             setConfig((p) => ({ ...p, assistantName: e.target.value }))
                           }
-                          placeholder="Nombre"
+                          placeholder="Asistente"
                           title="Nombre editable de tu asistente"
+                        />
+                        <input
+                          className="glass-input"
+                          style={{ width: 96, padding: "5px 8px", fontSize: 11.5 }}
+                          value={config.userName ?? ""}
+                          onChange={(e) =>
+                            setConfig((p) => ({
+                              ...p,
+                              userName: e.target.value,
+                              userOnboarded: Boolean(e.target.value.trim()),
+                            }))
+                          }
+                          placeholder="Tu nombre (Jefe)"
+                          title="Cómo quieres que te llame Nova (si queda vacío te dice Jefe)"
                         />
                         <select
                           className="glass-input"
@@ -3654,7 +3692,7 @@ export default function App() {
                           onClick={() => {
                             playWakeChime(config.hudSounds !== false);
                             void speakAsSubu(
-                              `Buenas noches, Hebert. Aquí ${config.assistantName || "Nova"}. Todo listo, ¿en qué trabajamos hoy?`,
+                              `Buenas noches, ${config.userName?.trim() || "Jefe"}. Aquí ${config.assistantName || "Nova"}. Todo listo, ¿en qué trabajamos hoy?`,
                               true,
                               config.voiceName || "en-US-EmmaMultilingualNeural",
                               () => setSpeaking(true),
@@ -3691,6 +3729,51 @@ export default function App() {
                           🧬 Clonar
                         </button>
                       </div>
+
+                      {kbLearnedCount > 0 && (
+                        <div className="glass-card-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 4 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                            <span style={{ fontSize: 10.5, fontWeight: 700, opacity: 0.85 }}>
+                              🧠 Rutinas en memoria ({getNovaKbPatterns().length})
+                            </span>
+                            <span style={{ fontSize: 9.5, opacity: 0.65 }}>
+                              Di &quot;Nova recuerda que ... es ...&quot;
+                            </span>
+                          </div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, maxHeight: 62, overflowY: "auto" }}>
+                            {getNovaKbPatterns().map((pat) => (
+                              <span
+                                key={pat.phrase}
+                                className="icon-chip"
+                                style={{ fontSize: 10, padding: "2px 7px", gap: 5 }}
+                                title={`${pat.tool}: ${pat.arg}`}
+                              >
+                                {pat.phrase}
+                                <button
+                                  type="button"
+                                  style={{
+                                    background: "none",
+                                    border: "none",
+                                    color: "inherit",
+                                    cursor: "pointer",
+                                    padding: 0,
+                                    opacity: 0.75,
+                                    fontSize: 10,
+                                  }}
+                                  title="Olvidar rutina"
+                                  onClick={() => {
+                                    void deleteNovaPattern(pat.phrase).then(() =>
+                                      setKbLearnedCount(getNovaKbStats().learnedCount),
+                                    );
+                                  }}
+                                >
+                                  ✕
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
                       <div className="glass-card-row" style={{ gap: 6 }}>
                         <input
