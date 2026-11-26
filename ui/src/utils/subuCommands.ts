@@ -1119,7 +1119,7 @@ export async function executeSubuCommand(
 
   // 2. Tareas y Notas del día (leer, crear/anotar con alarma horaria opcional, completar)
   const addTaskMatch = q.match(
-    /^(?:anota|anotame|agrega|agregame|aniade|apunta|apuntame|crea|creame|haz|hazme|guarda|guardame|pon|ponme|poneme|nueva|nuevo)\s+(?:una\s+|un\s+|la\s+|el\s+|en\s+mis\s+)?(?:tarea|nota|pendiente|recordatorio)s?\b\s*(?:de\s+|para\s+|que\s+diga\s+|llamada\s+|con\s+titulo\s+)?(.*)$/,
+    /^(?:anota|anotame|agrega|agregame|aniade|apunta|apuntame|crea|creame|haz|hazme|guarda|guardame|pon|ponme|poneme|nueva|nuevo)\s+(?:una\s+|un\s+|la\s+|el\s+|en\s+mis\s+)?(?:nueva\s+|nuevo\s+|otra\s+|otro\s+)?(?:tarea|nota|pendiente|recordatorio)s?\b\s*(?:de\s+|para\s+|que\s+diga\s+|llamada\s+|con\s+titulo\s+)?(.*)$/,
   );
   if (addTaskMatch) {
     let rawTask = (addTaskMatch[1] || "").trim();
@@ -1132,23 +1132,38 @@ export async function executeSubuCommand(
       };
     }
 
-    // Detecta horario exacto ("a las 11 de la noche", "a las 23:00", "a las 8:30 pm", "a las 4 de la tarde")
+    // Detecta horario exacto ("a las 11 de la noche", "a las 23:00", "a las 8:30 pm") o relativo ("en 1 minuto", "de un minuto", "en 2 horas")
     let scheduledMs: number | null = null;
     let timeLabel = "";
 
-    const relMatch = rawTask.match(/\ben\s+(\d{1,3})\s+(segundos?|minutos?|horas?)\b/);
+    const wordNums: Record<string, number> = {
+      un: 1,
+      una: 1,
+      uno: 1,
+      dos: 2,
+      tres: 3,
+      cuatro: 4,
+      cinco: 5,
+      diez: 10,
+      quince: 15,
+      veinte: 20,
+      treinta: 30,
+    };
+    const relMatch = rawTask.match(
+      /\b(?:en|de|dentro de|para dentro de|para las de)\s+(\d{1,3}|un|una|uno|dos|tres|cuatro|cinco|diez|quince|veinte|treinta)\s+(segundos?|minutos?|horas?)\b/,
+    );
     const clockMatch = rawTask.match(
       /\ba\s+las?\s+(\d{1,2})(?::(\d{2})|\s+y\s+(media|cuarto))?(?:\s*(am|pm|de la manana|de la tarde|de la noche|hrs|horas))?\b/,
     );
 
     if (relMatch) {
-      const qty = Math.max(1, Number(relMatch[1]));
+      const qty = Math.max(1, Number(relMatch[1]) || wordNums[relMatch[1]] || 1);
       const unit = relMatch[2];
       const mult = unit.startsWith("hora") ? 3600_000 : unit.startsWith("min") ? 60_000 : 1000;
       scheduledMs = qty * mult;
       const targetDate = new Date(Date.now() + scheduledMs);
       timeLabel = targetDate.toLocaleTimeString("es-BO", { hour: "2-digit", minute: "2-digit" });
-      rawTask = rawTask.replace(relMatch[0], "").replace(/^(?:para|de|que)\s+/, "").trim();
+      rawTask = rawTask.replace(relMatch[0], "").replace(/^(?:para|de|que|las)\s+/, "").trim();
     } else if (clockMatch) {
       let hr = Number(clockMatch[1]);
       let min = clockMatch[2]
@@ -1531,7 +1546,11 @@ export async function executeSubuCommand(
   // 10a. Revisar aliases conocidos de programador
   let canonical = targetQuery;
   for (const [canon, aliases] of Object.entries(APP_ALIASES)) {
-    if (aliases.some((a) => targetQuery === a || targetQuery.includes(a))) {
+    if (
+      aliases.some((a) =>
+        targetQuery === a || new RegExp(`\\b${escapeRegex(a)}\\b`).test(targetQuery),
+      )
+    ) {
       canonical = canon;
       break;
     }
