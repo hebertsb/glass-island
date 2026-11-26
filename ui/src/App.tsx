@@ -1124,6 +1124,7 @@ export default function App() {
   }, [config.shelfFiles]);
 
   // Escucha archivos o texto recibidos desde cualquier celular por Wi-Fi (GlassDrop)
+  const dropBatchRef = useRef<{ names: string[]; timer: number | null }>({ names: [], timer: null });
   useEffect(() => {
     const api = getBridge();
     if (!api?.on_glassdrop_event) return;
@@ -1138,6 +1139,36 @@ export default function App() {
         setGlassDropToast(`📥 Recibido desde celular: ${incoming.name}`);
         window.setTimeout(() => setGlassDropToast(null), 4500);
         triggerBurst("happy", 1800);
+
+        // Agrupa archivos enviados juntos (900ms) para que Nova avise por voz en 1 sola frase limpia
+        dropBatchRef.current.names.push(incoming.name);
+        if (dropBatchRef.current.timer) window.clearTimeout(dropBatchRef.current.timer);
+        dropBatchRef.current.timer = window.setTimeout(() => {
+          const names = [...dropBatchRef.current.names];
+          dropBatchRef.current.names = [];
+          dropBatchRef.current.timer = null;
+          const cfg = configRef.current;
+          const spoken =
+            names.length === 1
+              ? `Hebert, recibiste un archivo desde tu celular: ${names[0].replace(/\.[^.]+$/, "")}.`
+              : `Hebert, recibiste ${names.length} archivos desde tu celular.`;
+          setSubuReply(spoken);
+          if (cfg.voiceEnabled !== false) {
+            void speakAsSubu(
+              spoken,
+              true,
+              cfg.voiceName || "en-US-EmmaMultilingualNeural",
+              () => setSpeaking(true),
+              () => {
+                setSpeaking(false);
+                window.setTimeout(() => setSubuReply(null), 2600);
+              },
+              cfg.geminiApiKey || "",
+            );
+          } else {
+            window.setTimeout(() => setSubuReply(null), 3000);
+          }
+        }, 900);
       } else if (msg.kind === "clip" && msg.text) {
         setClipHistory((prev) => [msg.text!, ...prev.filter((x) => x !== msg.text)].slice(0, 12));
         playDoneChime(configRef.current.hudSounds !== false);
