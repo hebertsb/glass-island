@@ -556,6 +556,7 @@ export default function App() {
   const [ramHistory, setRamHistory] = useState<number[]>([48, 50, 51, 52, 51, 52]);
   const [shelfDragOver, setShelfDragOver] = useState(false);
   const [powerPlan, setPowerPlan] = useState<"power_saver" | "power_balanced" | "power_high">("power_balanced");
+  const [inFullscreen, setInFullscreen] = useState(false);
   const [nowPlaying, setNowPlaying] = useState<NowPlayingData>(() => {
     try {
       const saved = localStorage.getItem("glassisland.lastTrack.v1");
@@ -1030,7 +1031,7 @@ export default function App() {
           setExpanded(true);
           setSubuOpen(true);
           getBridge()?.set_ignore_mouse(false).catch(() => {});
-          const alertMsg = `¡Hebert! Recordatorio: ${message}.`;
+          const alertMsg = `¡Hebert! Ya es hora de realizar tu tarea programada: ${message}.`;
           setSubuReply(alertMsg);
           triggerBurst("excited", 3000);
           setGreenGlow(true);
@@ -1113,6 +1114,31 @@ export default function App() {
       scheduleCleanReset();
     }
   }
+
+  // Detecta juegos / videos en pantalla completa cada 1.4s para auto-ocultar el notch como la barra de tareas
+  useEffect(() => {
+    if (config.hideInFullscreen === false) {
+      setInFullscreen(false);
+      return;
+    }
+    const api = getBridge();
+    if (!api?.is_fullscreen) return;
+    let alive = true;
+    const pollFs = () => {
+      api
+        .is_fullscreen()
+        .then((r) => {
+          if (alive) setInFullscreen(Boolean(r?.fullscreen));
+        })
+        .catch(() => {});
+    };
+    pollFs();
+    const id = window.setInterval(pollFs, 1400);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [config.hideInFullscreen]);
 
   useEffect(() => {
     expandedRef.current = expanded;
@@ -1198,7 +1224,7 @@ export default function App() {
           setExpanded(true);
           setSubuOpen(true);
           getBridge()?.set_ignore_mouse(false).catch(() => {});
-          const alertMsg = `¡Hebert! Recordatorio: ${message}.`;
+          const alertMsg = `¡Hebert! Ya es hora de realizar tu tarea programada: ${message}.`;
           setSubuReply(alertMsg);
           triggerBurst("excited", 3000);
           setGreenGlow(true);
@@ -1456,6 +1482,7 @@ export default function App() {
     expanded && subuOpen
       ? 98 + (subuReply ? 42 : 0) + (folderChoices.length > 0 || unknownPhrase ? 54 : 0)
       : 0;
+  const hiddenForGame = !expanded && inFullscreen && config.hideInFullscreen !== false;
   const dims = getDimensions(
     config.shape,
     expanded,
@@ -1463,6 +1490,7 @@ export default function App() {
     voiceExtraH,
     nowPlaying.playing,
   );
+  const effectiveDims = hiddenForGame ? { ...dims, w: 180, h: 6 } : dims;
   const stageClass =
     config.anchor === "bottom-center"
       ? "island-stage island-stage--bottom"
@@ -1475,8 +1503,8 @@ export default function App() {
   return (
     <div className={stageClass}>
       <div
-        className={`island-shell island-shell--${config.shape}${config.themeStyle === "frutiger-aero" ? " island-shell--aero" : ""}${expanded ? " island-shell--expanded" : " island-shell--collapsed"}`}
-        style={{ width: dims.w, height: dims.h }}
+        className={`island-shell island-shell--${config.shape}${config.themeStyle === "frutiger-aero" ? " island-shell--aero" : ""}${expanded ? " island-shell--expanded" : " island-shell--collapsed"}${hiddenForGame ? " island-shell--game-hidden" : ""}`}
+        style={{ width: effectiveDims.w, height: effectiveDims.h }}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
@@ -3396,6 +3424,24 @@ export default function App() {
                           <button
                             type="button"
                             className={`glass-switch${config.autoStart ? " glass-switch--on" : ""}`}
+                          >
+                            <span className="glass-switch__thumb" />
+                          </button>
+                        </div>
+                        <div
+                          className="switch-row"
+                          onClick={() =>
+                            setConfig((p) => ({
+                              ...p,
+                              hideInFullscreen: p.hideInFullscreen === false,
+                            }))
+                          }
+                          title="Se oculta totalmente en juegos y pantalla completa hasta que digas Oye Nova o lleves el mouse al borde superior"
+                        >
+                          <span>🎮 Ocultar en juegos</span>
+                          <button
+                            type="button"
+                            className={`glass-switch${config.hideInFullscreen !== false ? " glass-switch--on" : ""}`}
                           >
                             <span className="glass-switch__thumb" />
                           </button>

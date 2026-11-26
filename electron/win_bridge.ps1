@@ -1,15 +1,55 @@
-$ErrorActionPreference = 'SilentlyContinue'
+﻿$ErrorActionPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 Add-Type -TypeDefinition @'
 using System;
+using System.Text;
 using System.Runtime.InteropServices;
 public class GIKey {
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+
     [DllImport("user32.dll")]
     public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")]
+    public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+    [DllImport("user32.dll")]
+    public static extern int GetSystemMetrics(int nIndex);
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
     public static void Tap(byte vk) {
         keybd_event(vk, 0, 0, UIntPtr.Zero);
         keybd_event(vk, 0, 2, UIntPtr.Zero);
+    }
+
+    public static bool IsFullscreenApp() {
+        IntPtr h = GetForegroundWindow();
+        if (h == IntPtr.Zero) return false;
+        StringBuilder cls = new StringBuilder(128);
+        GetClassName(h, cls, cls.Capacity);
+        string c = cls.ToString();
+        if (c == "Progman" || c == "WorkerW" || c == "Shell_TrayWnd" || c == "Shell_SecondaryTrayWnd") return false;
+        RECT r;
+        if (!GetWindowRect(h, out r)) return false;
+        int sw = GetSystemMetrics(0);
+        int sh = GetSystemMetrics(1);
+        int w = r.Right - r.Left;
+        int hgt = r.Bottom - r.Top;
+        if (w < sw - 8 || hgt < sh - 8) return false;
+        if (r.Left > 4 || r.Top > 4) return false;
+        uint pid = 0;
+        GetWindowThreadProcessId(h, out pid);
+        try {
+            var p = System.Diagnostics.Process.GetProcessById((int)pid);
+            string pn = p.ProcessName.ToLowerInvariant();
+            if (pn == "electron" || pn == "glassisland" || pn == "explorer") return false;
+        } catch {}
+        return true;
     }
 }
 '@
@@ -223,6 +263,9 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
             }
         } elseif ($cmd -eq 'extra') {
             $payload = Get-ExtraTelemetryJson
+        } elseif ($cmd -eq 'fullscreen') {
+            $fs = [GIKey]::IsFullscreenApp()
+            $payload = if ($fs) { '{"fullscreen":true}' } else { '{"fullscreen":false}' }
         } elseif ($cmd -eq 'quit') {
             break
         }

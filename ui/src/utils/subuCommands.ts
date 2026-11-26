@@ -864,6 +864,14 @@ export async function executeSubuCommand(
     return { ok: Boolean(res?.ok), reply };
   }
 
+  // 1g) MODO JUEGO / PANTALLA COMPLETA ("modo juego", "modo gamer")
+  if (q.includes("modo juego") || q.includes("modo gamer")) {
+    await api?.quick_control("power_high").catch(() => {});
+    const reply = "Modo juego activado, Hebert. Rendimiento al máximo y me ocultaré en pantalla completa hasta que me llames o subas el cursor arriba.";
+    pushContextTurn("assistant", reply, "mode_game");
+    return { ok: true, reply };
+  }
+
   // 2) Recordatorios con alarma hablada ("recuérdame en 15 minutos subir los cambios")
   const remMatch = q.match(
     /^(?:recuerdame|recordame|avisame|pon una alarma|pon un recordatorio)\s+en\s+(\d{1,3})\s+(segundos?|minutos?|horas?)\s*(?:que\s+|de\s+|para\s+)?(.+)$/,
@@ -993,20 +1001,86 @@ export async function executeSubuCommand(
     };
   }
 
-  // 2. Tareas del día (leer, agregar, completar) — Modo Jarvis interactivo
+  // 2. Tareas y Notas del día (leer, crear/anotar con alarma horaria opcional, completar)
   const addTaskMatch = q.match(
-    /^(?:anota|anotame|agrega|agregame|aniade|apunta|apuntame|crea|nueva)\s+(?:una\s+|la\s+|en\s+mis\s+)?(?:tarea|pendiente|recordatorio)s?\s*(?:de\s+|para\s+|que\s+diga\s+)?(.+)$/,
+    /^(?:anota|anotame|agrega|agregame|aniade|apunta|apuntame|crea|creame|haz|hazme|guarda|guardame|pon|ponme|poneme|nueva|nuevo)\s+(?:una\s+|un\s+|la\s+|el\s+|en\s+mis\s+)?(?:tarea|nota|pendiente|recordatorio)s?\b\s*(?:de\s+|para\s+|que\s+diga\s+|llamada\s+|con\s+titulo\s+)?(.*)$/,
   );
   if (addTaskMatch) {
-    const taskText = addTaskMatch[1].trim();
-    if (taskText) {
-      const nice = taskText.charAt(0).toUpperCase() + taskText.slice(1);
-      ctx.addTodo(nice);
+    let rawTask = (addTaskMatch[1] || "").trim();
+    if (!rawTask) {
       ctx.setActiveTab?.("notes");
-      const reply = `Entendido, anoté la tarea: ${nice}.`;
+      return {
+        ok: true,
+        reply: "Claro, Hebert. Dime qué tarea o nota quieres que anote, y si quieres también a qué hora te aviso.",
+        keepOpen: true,
+      };
+    }
+
+    // Detecta horario exacto ("a las 11 de la noche", "a las 23:00", "a las 8:30 pm", "a las 4 de la tarde")
+    let scheduledMs: number | null = null;
+    let timeLabel = "";
+
+    const relMatch = rawTask.match(/\ben\s+(\d{1,3})\s+(segundos?|minutos?|horas?)\b/);
+    const clockMatch = rawTask.match(
+      /\ba\s+las?\s+(\d{1,2})(?::(\d{2})|\s+y\s+(media|cuarto))?(?:\s*(am|pm|de la manana|de la tarde|de la noche|hrs|horas))?\b/,
+    );
+
+    if (relMatch) {
+      const qty = Math.max(1, Number(relMatch[1]));
+      const unit = relMatch[2];
+      const mult = unit.startsWith("hora") ? 3600_000 : unit.startsWith("min") ? 60_000 : 1000;
+      scheduledMs = qty * mult;
+      const targetDate = new Date(Date.now() + scheduledMs);
+      timeLabel = targetDate.toLocaleTimeString("es-BO", { hour: "2-digit", minute: "2-digit" });
+      rawTask = rawTask.replace(relMatch[0], "").replace(/^(?:para|de|que)\s+/, "").trim();
+    } else if (clockMatch) {
+      let hr = Number(clockMatch[1]);
+      let min = clockMatch[2]
+        ? Number(clockMatch[2])
+        : clockMatch[3] === "media"
+          ? 30
+          : clockMatch[3] === "cuarto"
+            ? 15
+            : 0;
+      const period = (clockMatch[4] || "").toLowerCase();
+      if ((period.includes("pm") || period.includes("tarde") || period.includes("noche")) && hr < 12) {
+        hr += 12;
+      } else if ((period.includes("am") || period.includes("manana")) && hr === 12) {
+        hr = 0;
+      }
+      if (hr >= 0 && hr <= 23 && min >= 0 && min <= 59) {
+        const now = new Date();
+        const target = new Date(now);
+        target.setHours(hr, min, 0, 0);
+        if (target.getTime() <= now.getTime() + 5000) {
+          target.setDate(target.getDate() + 1);
+        }
+        scheduledMs = target.getTime() - now.getTime();
+        timeLabel = `${String(hr).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+        rawTask = rawTask
+          .replace(clockMatch[0], "")
+          .replace(/^(?:para|de|que)\s+/, "")
+          .replace(/\s+(?:para|de)$/, "")
+          .trim();
+      }
+    }
+
+    const cleanBody = rawTask || "Tarea programada";
+    const nice = cleanBody.charAt(0).toUpperCase() + cleanBody.slice(1);
+    const storedText = timeLabel ? `⏰ ${timeLabel} · ${nice}` : nice;
+    ctx.addTodo(storedText);
+    ctx.setActiveTab?.("notes");
+
+    if (scheduledMs !== null && scheduledMs > 0 && scheduledMs <= 24 * 3600_000) {
+      ctx.scheduleReminder?.(scheduledMs, nice);
+      const reply = `Listo, Hebert. Anoté tu tarea "${nice}" y programé tu alarma para las ${timeLabel}. Te avisaré cuando sea hora.`;
       pushContextTurn("assistant", reply, "tasks", nice);
       return { ok: true, reply };
     }
+
+    const reply = `Listo, Hebert. Anoté en tus tareas: ${nice}.`;
+    pushContextTurn("assistant", reply, "tasks", nice);
+    return { ok: true, reply };
   }
 
   const doneTaskMatch = q.match(

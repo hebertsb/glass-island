@@ -1108,3 +1108,12 @@ body,
   outline: 1.5px solid rgba(56, 189, 248, 0.7);
   border-radius: 12px;
 }
+
+/* Modo Juego / Pantalla Completa: se oculta como la barra de tareas y solo deja una zona invisible de 6px arriba */
+.island-shell--game-hidden {
+  opacity: 0.01 !important;
+  box-shadow: none !important;
+  border-color: transparent !important;
+  background: transparent !important;
+  pointer-events: auto;
+}

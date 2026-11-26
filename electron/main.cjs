@@ -396,6 +396,11 @@ app.whenReady().then(() => {
     };
   });
 
+  ipcMain.handle("island:is-fullscreen", async () => {
+    const res = await callBridge({ cmd: "fullscreen" }, 1500);
+    return { fullscreen: Boolean(res?.fullscreen) };
+  });
+
   ipcMain.handle("island:quick-control", async (_e, action) => {
     const act = String(action || "").toLowerCase();
     try {

@@ -170,6 +170,7 @@ export interface IslandConfig {
   pinnedOpen: boolean;
   lockedPosition: boolean;
   autoHide: boolean;
+  hideInFullscreen?: boolean;
   autoStart?: boolean;
   showMouth: boolean;
   assistantName: string;
@@ -370,6 +371,7 @@ export interface GlassIslandApi {
   get_auto_start: () => Promise<{ enabled: boolean }>;
   set_auto_start: (enabled: boolean) => Promise<{ ok: boolean; enabled: boolean }>;
   quick_control: (action: string) => Promise<{ ok: boolean; plan?: string; brightness?: number }>;
+  is_fullscreen: () => Promise<{ fullscreen: boolean }>;
   get_file_path: (file: File) => string;
   quit_app: () => Promise<void>;
 }
