@@ -376,8 +376,14 @@ export interface GlassIslandApi {
   glassdrop_start: (files?: ShelfFile[]) => Promise<{ running: boolean; url?: string; ip?: string; port?: number; error?: string }>;
   glassdrop_stop: () => Promise<{ running: boolean }>;
   glassdrop_sync: (files: ShelfFile[]) => Promise<boolean>;
+  glassdrop_open_folder: (subFolder?: string) => Promise<{ ok: boolean; path?: string }>;
   on_glassdrop_event: (
-    cb: (msg: { kind: "file" | "clip"; file?: ShelfFile; text?: string }) => void,
+    cb: (msg: {
+      kind: "file" | "clip" | "connected";
+      file?: ShelfFile & { category?: string; folder?: string };
+      text?: string;
+      device?: string;
+    }) => void,
   ) => () => void;
   quit_app: () => Promise<void>;
 }

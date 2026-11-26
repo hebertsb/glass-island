@@ -324,11 +324,38 @@ setInterval(loadFiles, 3000);
 </html>`;
 }
 
-function createGlassDropServer({ getShelfFiles, onFileReceived, onClipReceived }) {
+function getCategoryFolder(filename) {
+  const ext = path.extname(String(filename || "")).toLowerCase();
+  if (/^\.(jpg|jpeg|png|webp|gif|heic|heif|bmp|svg|avif|ico)$/.test(ext)) return "Imagenes";
+  if (/^\.(mp4|mov|mkv|avi|webm|3gp|m4v)$/.test(ext)) return "Videos";
+  if (/^\.(pdf|doc|docx|xls|xlsx|ppt|pptx|txt|md|csv|rtf|odt)$/.test(ext)) return "Documentos";
+  if (/^\.(mp3|wav|m4a|ogg|flac|aac|opus)$/.test(ext)) return "Audio";
+  if (/^\.(zip|rar|7z|tar|gz|bz2)$/.test(ext)) return "Comprimidos";
+  if (/^\.(apk|exe|msi|py|js|ts|tsx|jsx|json|html|css|java|cpp|c|cs|sql|sh|ps1)$/.test(ext)) {
+    return "Apps_y_Codigo";
+  }
+  return "Otros";
+}
+
+function detectDeviceLabel(ua = "") {
+  const s = String(ua || "");
+  if (/iPhone/i.test(s)) return "iPhone";
+  if (/iPad/i.test(s)) return "iPad";
+  const androidModel = s.match(/Android [^;]+;\s*([^)]+)\)/i);
+  if (androidModel?.[1]) {
+    const clean = androidModel[1].replace(/Build\/.*$/i, "").trim();
+    if (clean && clean !== "K") return clean.slice(0, 28);
+  }
+  if (/Android/i.test(s)) return "Celular Android";
+  return "Dispositivo Wi-Fi";
+}
+
+function createGlassDropServer({ getShelfFiles, onFileReceived, onClipReceived, onDeviceConnected }) {
   let server = null;
   let token = "";
   let port = 8765;
   let ip = "127.0.0.1";
+  let lastDevice = "";
   const downloadDir = path.join(os.homedir(), "Downloads", "GlassDrop");
 
   function stop() {
@@ -371,6 +398,11 @@ function createGlassDropServer({ getShelfFiles, onFileReceived, onClipReceived }
           }
 
           if (req.method === "GET" && (parsed.pathname === "/" || Boolean(pathTokenMatch))) {
+            const dev = detectDeviceLabel(req.headers["user-agent"]);
+            if (dev !== lastDevice) {
+              lastDevice = dev;
+              onDeviceConnected?.(dev);
+            }
             res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
             res.end(html);
             return;
@@ -409,12 +441,14 @@ function createGlassDropServer({ getShelfFiles, onFileReceived, onClipReceived }
               .basename(rawName)
               .replace(/[<>:"/\\|?*\x00-\x1f]+/g, "_")
               .slice(0, 140) || `archivo_${Date.now()}`;
-            fs.mkdirSync(downloadDir, { recursive: true });
-            let dest = path.join(downloadDir, safeBase);
+            const category = getCategoryFolder(safeBase);
+            const categoryDir = path.join(downloadDir, category);
+            fs.mkdirSync(categoryDir, { recursive: true });
+            let dest = path.join(categoryDir, safeBase);
             if (fs.existsSync(dest)) {
               const ext = path.extname(safeBase);
               const stem = path.basename(safeBase, ext);
-              dest = path.join(downloadDir, `${stem}_${Date.now().toString().slice(-4)}${ext}`);
+              dest = path.join(categoryDir, `${stem}_${Date.now().toString().slice(-4)}${ext}`);
             }
             const ws = fs.createWriteStream(dest);
             let totalBytes = 0;
@@ -424,9 +458,15 @@ function createGlassDropServer({ getShelfFiles, onFileReceived, onClipReceived }
             req.pipe(ws);
             ws.on("finish", () => {
               const finalName = path.basename(dest);
-              onFileReceived?.({ path: dest, name: finalName, size_bytes: totalBytes });
+              onFileReceived?.({
+                path: dest,
+                name: finalName,
+                size_bytes: totalBytes,
+                category,
+                folder: categoryDir,
+              });
               res.writeHead(200, { "Content-Type": "application/json" });
-              res.end(JSON.stringify({ ok: true, name: finalName, size_bytes: totalBytes }));
+              res.end(JSON.stringify({ ok: true, name: finalName, size_bytes: totalBytes, category }));
             });
             ws.on("error", () => {
               res.writeHead(500);
@@ -481,7 +521,12 @@ function createGlassDropServer({ getShelfFiles, onFileReceived, onClipReceived }
     });
   }
 
-  return { start, stop };
+  function getDownloadDir() {
+    fs.mkdirSync(downloadDir, { recursive: true });
+    return downloadDir;
+  }
+
+  return { start, stop, getDownloadDir };
 }
 
 module.exports = { createGlassDropServer };

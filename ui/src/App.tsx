@@ -559,6 +559,8 @@ export default function App() {
   const [inFullscreen, setInFullscreen] = useState(false);
   const [glassDropUrl, setGlassDropUrl] = useState<string | null>(null);
   const [glassDropToast, setGlassDropToast] = useState<string | null>(null);
+  const [glassDropDevice, setGlassDropDevice] = useState<string | null>(null);
+  const [lastDropFolder, setLastDropFolder] = useState<string | undefined>(undefined);
   const [nowPlaying, setNowPlaying] = useState<NowPlayingData>(() => {
     try {
       const saved = localStorage.getItem("glassisland.lastTrack.v1");
@@ -1129,15 +1131,21 @@ export default function App() {
     const api = getBridge();
     if (!api?.on_glassdrop_event) return;
     const unsub = api.on_glassdrop_event((msg) => {
-      if (msg.kind === "file" && msg.file) {
+      if (msg.kind === "connected" && msg.device) {
+        setGlassDropDevice(msg.device);
+        playWakeChime(configRef.current.hudSounds !== false);
+        triggerBurst("happy", 1400);
+      } else if (msg.kind === "file" && msg.file) {
         const incoming = msg.file;
         setConfig((p) => ({
           ...p,
           shelfFiles: [incoming, ...p.shelfFiles.filter((x) => x.path !== incoming.path)],
         }));
+        if (incoming.folder) setLastDropFolder(incoming.folder);
         playDoneChime(configRef.current.hudSounds !== false);
-        setGlassDropToast(`📥 Recibido desde celular: ${incoming.name}`);
-        window.setTimeout(() => setGlassDropToast(null), 4500);
+        const catTag = incoming.category ? ` → ${incoming.category}` : "";
+        setGlassDropToast(`📥 Guardado${catTag}: ${incoming.name}`);
+        window.setTimeout(() => setGlassDropToast(null), 6500);
         triggerBurst("happy", 1800);
 
         // Agrupa archivos enviados juntos (900ms) para que Nova avise por voz en 1 sola frase limpia
@@ -2763,11 +2771,20 @@ export default function App() {
                     <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
                       <button
                         type="button"
+                        className="glass-btn"
+                        onClick={() => getBridge()?.glassdrop_open_folder?.().catch(() => {})}
+                        title="Abrir carpeta Descargas\\GlassDrop (organizada en Imágenes, Videos, Documentos...)"
+                      >
+                        📂 Carpeta
+                      </button>
+                      <button
+                        type="button"
                         className={`glass-btn${glassDropUrl ? " glass-btn--white" : ""}`}
                         onClick={async () => {
                           if (glassDropUrl) {
                             await getBridge()?.glassdrop_stop?.().catch(() => {});
                             setGlassDropUrl(null);
+                            setGlassDropDevice(null);
                           } else {
                             const res = await getBridge()?.glassdrop_start?.(config.shelfFiles).catch(() => null);
                             if (res?.running && res.url) {
@@ -2778,7 +2795,7 @@ export default function App() {
                         }}
                         title="Conecta cualquier celular (Android o iPhone) por la misma red Wi-Fi mediante código QR"
                       >
-                        {glassDropUrl ? "✕ Cerrar Wi-Fi" : "📱 Enviar / Recibir Celular"}
+                        {glassDropUrl ? "✕ Cerrar Wi-Fi" : "📱 Enviar / Recibir"}
                       </button>
                       <button type="button" className="glass-btn glass-btn--white" onClick={handleAddShelfFiles}>
                         <Plus size={12} /> Archivos
@@ -2788,6 +2805,10 @@ export default function App() {
                   {glassDropToast && (
                     <div
                       style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 8,
                         fontSize: 11,
                         padding: "5px 9px",
                         borderRadius: 9,
@@ -2796,7 +2817,17 @@ export default function App() {
                         color: "#e0f2fe",
                       }}
                     >
-                      {glassDropToast}
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {glassDropToast}
+                      </span>
+                      <button
+                        type="button"
+                        className="icon-chip icon-chip--active"
+                        style={{ fontSize: 10, flexShrink: 0 }}
+                        onClick={() => getBridge()?.glassdrop_open_folder?.(lastDropFolder).catch(() => {})}
+                      >
+                        📂 Abrir carpeta
+                      </button>
                     </div>
                   )}
                   {glassDropUrl && (
@@ -2818,11 +2849,13 @@ export default function App() {
                         style={{ borderRadius: 8, background: "#fff", flexShrink: 0 }}
                       />
                       <div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: 3 }}>
-                        <strong style={{ fontSize: 11.5, color: "#7dd3fc" }}>
-                          📱 Escanea desde cualquier celular (mismo Wi-Fi)
+                        <strong style={{ fontSize: 11.5, color: glassDropDevice ? "#6ee7b7" : "#7dd3fc" }}>
+                          {glassDropDevice
+                            ? `● ${glassDropDevice} conectado · Listo para transferir`
+                            : "📱 Escanea desde cualquier celular (mismo Wi-Fi)"}
                         </strong>
                         <span style={{ fontSize: 10.5, opacity: 0.82 }}>
-                          Descarga los archivos del Estante o sube fotos/videos directo a <code>Descargas\GlassDrop</code>.
+                          Auto-ordena lo que envíes en <code>Imagenes</code>, <code>Videos</code>, <code>Documentos</code>, <code>Audio</code> y <code>Otros</code>.
                         </span>
                         <span
                           style={{

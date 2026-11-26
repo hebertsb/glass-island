@@ -2137,6 +2137,11 @@ app.whenReady().then(() => {
   let shelfFilesCache = [];
   const glassDrop = createGlassDropServer({
     getShelfFiles: () => shelfFilesCache,
+    onDeviceConnected: (device) => {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send("island:glassdrop-event", { kind: "connected", device });
+      }
+    },
     onFileReceived: (fileItem) => {
       if (win && !win.isDestroyed()) {
         win.webContents.send("island:glassdrop-event", { kind: "file", file: fileItem });
@@ -2152,6 +2157,19 @@ app.whenReady().then(() => {
         win.webContents.send("island:glassdrop-event", { kind: "clip", text });
       }
     },
+  });
+
+  ipcMain.handle("island:glassdrop-open-folder", async (_e, subFolder) => {
+    try {
+      const target =
+        subFolder && fs.existsSync(String(subFolder))
+          ? String(subFolder)
+          : glassDrop.getDownloadDir();
+      await shell.openPath(target);
+      return { ok: true, path: target };
+    } catch {
+      return { ok: false };
+    }
   });
 
   ipcMain.handle("island:glassdrop-sync", (_e, files) => {
