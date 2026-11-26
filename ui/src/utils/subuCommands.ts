@@ -797,26 +797,28 @@ export async function executeSubuCommand(
       : { ok: false, reply: `No encontré una ventana abierta de ${appTarget}.` };
   }
 
-  // 0e2. Tool: Mover ventana entre Pantalla Principal (1) y Secundaria (2) — SIEMPRE la trae en PRIMER PLANO
-  // Soporta todos los sustantivos y repeticiones de voz:
-  // "trae Chrome a esta pantalla", "trae crohn a la pantalla 1", "pasa Chrome a la primera pantalla",
-  // "lleva VS Code a la segunda pantalla", "mueve esto al monitor dos", "pasa a la pantalla contraria"
-  const moveWinMatch = q.match(
-    /^(?:(?:a\s+)?(?:pasa|pasame|pasalo|pasala|pasar|pasaron|mueve|moveme|muevelo|muevela|mover|trae|traeme|traelo|traela|traer|lleva|llevame|llevalo|llevala|llevar|manda|mandame|mandalo|mandala|mandar|envia|enviame|envialo|enviala|enviar|pon|ponme|ponlo|ponla))\s+(?:(?:la\s+ventana\s+de\s+|la\s+ventana\s+|esta\s+ventana|esta\s+app|(.+?))\s+)?(?:(?:a\s+la|a\s+mi|a\s+esta|a\s+este|al|para\s+la|hacia\s+la|en\s+la)\s+)+(?:(?:a\s+esta|a\s+este|a\s+la)\s+)?(pantalla\s+principal|primera\s+pantalla|pantalla\s+primera|pantalla\s+1|pantalla\s+uno|monitor\s+principal|primer\s+monitor|monitor\s+1|monitor\s+uno|pantalla\s+de\s+la\s+laptop|pantalla|monitor|pantalla\s+secundaria|segunda\s+pantalla|pantalla\s+segunda|pantalla\s+2|pantalla\s+dos|monitor\s+secundario|segundo\s+monitor|monitor\s+2|monitor\s+dos|otro\s+monitor|otra\s+pantalla|pantalla\s+contraria|monitor\s+contrario)$/,
-  );
-  if (moveWinMatch) {
-    let rawHint = (moveWinMatch[1] || "")
-      .replace(/^(?:la\s+ventana\s+de\s+|la\s+app\s+de\s+|esta\s+ventana|esta\s+app|esto|eso)$/g, "")
-      .replace(/\s+(?:a\s+esta|a\s+este|a\s+la|a\s+mi)$/g, "")
+  // 0e2. Tool: Mover ventana entre Pantalla Principal (1) y Secundaria (2) — INDEPENDIENTE DEL ORDEN DE LAS PALABRAS
+  // Soporta tanto "llévalo Chrome a la pantalla 2" como "llévalo a la pantalla uno Chrome" o "pasa a la segunda pantalla VS Code"
+  const MOVE_VERB_RE =
+    /^(?:a\s+)?(?:pasa|pasame|pasalo|pasala|pasar|pasaron|mueve|moveme|muevelo|muevela|mover|trae|traeme|traelo|traela|traer|lleva|llevame|llevalo|llevala|llevar|manda|mandame|mandalo|mandala|mandar|envia|enviame|envialo|enviala|enviar|pon|ponme|ponlo|ponla)\b/;
+  const SCREEN_TARGET_RE =
+    /\b(?:(?:a\s+la|a\s+mi|a\s+esta|a\s+este|al|para\s+la|hacia\s+la|en\s+la)\s+)*(pantalla\s+principal|primera\s+pantalla|pantalla\s+primera|pantalla\s+1|pantalla\s+uno|monitor\s+principal|primer\s+monitor|monitor\s+1|monitor\s+uno|pantalla\s+de\s+la\s+laptop|pantalla\s+secundaria|segunda\s+pantalla|pantalla\s+segunda|pantalla\s+2|pantalla\s+dos|monitor\s+secundario|segundo\s+monitor|monitor\s+2|monitor\s+dos|otro\s+monitor|otra\s+pantalla|pantalla\s+contraria|monitor\s+contrario|esta\s+pantalla|este\s+monitor)\b/;
+  const screenHit = MOVE_VERB_RE.test(q) ? q.match(SCREEN_TARGET_RE) : null;
+  if (screenHit) {
+    const dest = screenHit[1] || "";
+    const isSecondary = /secundari|segund|\b2\b|\bdos\b|otr[oa]|contrari/.test(dest);
+    const targetDisplay: "primary" | "secondary" = isSecondary ? "secondary" : "primary";
+    let rawHint = q
+      .replace(MOVE_VERB_RE, " ")
+      .replace(new RegExp(SCREEN_TARGET_RE.source, "g"), " ")
+      .replace(/\b(?:la\s+ventana|esta\s+ventana|esta\s+app|la\s+app|a\s+esta|a\s+este|a\s+la|a\s+mi|al|para\s+la|hacia\s+la|en\s+la|para|hacia|de|el|la|en|a|mi|esta|este|esto|eso)\b/g, " ")
+      .replace(/\s+/g, " ")
       .trim();
     if (/^(?:google|google chrome|chrome|crome|crohn|crom|crone|krom|chorme|navegador)$/i.test(rawHint)) rawHint = "chrome";
     else if (/^(?:vs code|vscode|visual studio code|visual studio|visual estudio|code)$/i.test(rawHint)) rawHint = "Code";
     else if (/^(?:edge|microsoft edge)$/i.test(rawHint)) rawHint = "msedge";
     else if (/^(?:whatsapp|wasap|wsp)$/i.test(rawHint)) rawHint = "WhatsApp";
     else if (/^(?:spotify|espotifai)$/i.test(rawHint)) rawHint = "Spotify";
-    const dest = moveWinMatch[2] || "";
-    const isSecondary = /secundari|segund|\b2\b|\bdos\b|otr[oa]|contrari/.test(dest);
-    const targetDisplay: "primary" | "secondary" = isSecondary ? "secondary" : "primary";
     const res = await api?.move_window_display?.(rawHint, targetDisplay);
     return res?.ok
       ? { ok: true, reply: `Listo, traje ${res.title || "la ventana"} en primer plano a tu ${res.target}.` }
