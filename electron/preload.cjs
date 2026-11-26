@@ -25,6 +25,11 @@ const api = {
   set_clipboard_image: (filePath) => ipcRenderer.invoke("island:set-clipboard-image", filePath),
   start_file_drag: (filePath) => ipcRenderer.send("island:start-file-drag", filePath),
   get_displays: () => ipcRenderer.invoke("island:get-displays"),
+  get_system_context: () => ipcRenderer.invoke("island:get-system-context"),
+  open_recent_file: (queryHint) => ipcRenderer.invoke("island:open-recent-file", queryHint),
+  move_window_display: (appHint, targetDisplay) =>
+    ipcRenderer.invoke("island:move-window-display", appHint, targetDisplay),
+  close_active_window: () => ipcRenderer.invoke("island:close-active-window"),
   launch: (target) => ipcRenderer.invoke("island:launch", target),
   launch_and_paste: (target, promptText, appLabel) =>
     ipcRenderer.invoke("island:launch-and-paste", target, promptText, appLabel),

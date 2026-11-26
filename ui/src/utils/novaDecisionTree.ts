@@ -10,6 +10,7 @@
  */
 
 import type { NovaKnowledgeBase, NovaToolId } from "../types";
+import commandsPack from "../data/novaCommandsPack.json";
 
 export interface ConversationTurn {
   role: "user" | "assistant";
@@ -271,7 +272,10 @@ function tokenize(text: string): string[] {
 }
 
 export function trainDecisionTree(kb?: NovaKnowledgeBase): { examples: number } {
-  const samples: TrainingSample[] = [...SEED_SAMPLES];
+  const packSamples: TrainingSample[] = Array.isArray(commandsPack?.samples)
+    ? (commandsPack.samples as TrainingSample[])
+    : [];
+  const samples: TrainingSample[] = [...SEED_SAMPLES, ...packSamples];
   if (kb?.patterns) {
     for (const p of kb.patterns) {
       // Da mayor peso a frases reales enseñadas por el usuario

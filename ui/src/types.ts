@@ -137,6 +137,8 @@ export type NovaToolId =
   | "close_app"
   | "open_project"
   | "create_project"
+  | "open_recent_file"
+  | "move_window_display"
   | "web_search"
   | "add_todo"
   | "modo_programacion"
@@ -313,6 +315,16 @@ export interface GlassIslandApi {
   set_clipboard_image?: (filePath: string) => Promise<boolean>;
   start_file_drag?: (filePath: string) => void;
   get_displays?: () => Promise<{ id: number; index: number; primary: boolean; width: number; height: number; label: string }[]>;
+  get_system_context?: () => Promise<{
+    userName: string;
+    activeWindow: { processName: string; title: string } | null;
+    openWindows: { processName: string; title: string }[];
+    recentFiles: { name: string; path: string; folder: string; ext: string; ageMins: number }[];
+    displaysCount: number;
+  }>;
+  open_recent_file?: (queryHint?: string) => Promise<{ ok: boolean; name?: string; path?: string; folder?: string }>;
+  move_window_display?: (appHint?: string, targetDisplay?: "primary" | "secondary") => Promise<{ ok: boolean; title?: string; target?: string }>;
+  close_active_window?: () => Promise<{ ok: boolean; title?: string }>;
   launch: (target: string) => Promise<{ ok: boolean; error?: string }>;
   launch_and_paste: (
     target: string,

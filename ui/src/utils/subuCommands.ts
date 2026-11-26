@@ -190,6 +190,20 @@ export async function executeNovaTool(
         }
       : { ok: false, reply: `No pude crear el proyecto ${cleanArg}.` };
   }
+  if (tool === "open_recent_file") {
+    const res = await api?.open_recent_file?.(cleanArg);
+    return res?.ok
+      ? { ok: true, reply: `¡Claro! Abriendo tu archivo reciente ${res.name} desde ${res.folder}.` }
+      : { ok: false, reply: `No encontré ningún archivo reciente parecido a "${cleanArg}".` };
+  }
+  if (tool === "move_window_display") {
+    const target = /principal|1|uno/.test(norm(cleanArg)) ? "primary" : "secondary";
+    const appHint = cleanArg.replace(/\b(principal|secundaria|pantalla\s*[12]|monitor\s*[12]|esta\s+ventana)\b/gi, "").trim();
+    const res = await api?.move_window_display?.(appHint, target);
+    return res?.ok
+      ? { ok: true, reply: `Listo, moví ${res.title || "la ventana"} a tu ${res.target}.` }
+      : { ok: false, reply: "No encontré una ventana abierta para mover entre pantallas." };
+  }
   if (tool === "modo_programacion") return await executeSubuCommand("modo programacion", ctx, true);
   if (tool === "modo_proyecto") return await executeSubuCommand("modo proyecto", ctx, true);
   if (tool === "modo_semana") return await executeSubuCommand("modo semana", ctx, true);
@@ -504,8 +518,13 @@ export async function executeSubuCommand(
   q = q.replace(/^(?:quiero que|puedes|podes|necesito que|por favor)\s+/, "").trim();
 
   // 0a. Selección por voz cuando Nova mostró carpetas parecidas ("abre la segunda", "la del medio", "la 1", "la última")
+  // Protegido para no interceptar órdenes largas de archivos como "abre el último PDF que descargué"
   const activeFolders = getActivePendingFolders();
-  if (activeFolders.length > 0) {
+  if (
+    activeFolders.length > 0 &&
+    q.split(" ").length <= 5 &&
+    !/\b(pdf|archivo|documento|video|foto|imagen|captura|informe)\b/.test(q)
+  ) {
     let pickIdx = -1;
     if (/\b(primera|primero|uno|1)\b/.test(q)) pickIdx = 0;
     else if (/\b(segunda|segundo|dos|2)\b/.test(q)) pickIdx = 1;
@@ -737,9 +756,12 @@ export async function executeSubuCommand(
   }
 
   // 0d. Tool: Cambiar la canción actual por otra ("cambia la canción por La Macarena", "cámbiame esta música por Firestone")
-  const switchSongMatch = q.match(
-    /^(?:cambia|cambie|cambiar|cambiame|cambiale|pasala|pasa|pone otro tema|pon otra cancion|cambia el video)\s+(?:la\s+cancion\s+|esta\s+cancion\s+|la\s+musica\s+|esta\s+musica\s+|el\s+tema\s+|este\s+tema\s+|el\s+video\s+)?(?:por|a|para)?\s*(.+?)(?:\s+en\s+(youtube\s+music|youtube|spotify))?$/,
-  );
+  const switchSongMatch =
+    !/\b(pantalla|monitor)\b/.test(q)
+      ? q.match(
+          /^(?:cambia|cambie|cambiar|cambiame|cambiale|pasala|pasa|pone otro tema|pon otra cancion|cambia el video)\s+(?:la\s+cancion\s+|esta\s+cancion\s+|la\s+musica\s+|esta\s+musica\s+|el\s+tema\s+|este\s+tema\s+|el\s+video\s+)?(?:por|a|para)?\s*(.+?)(?:\s+en\s+(youtube\s+music|youtube|spotify))?$/,
+        )
+      : null;
   if (switchSongMatch && switchSongMatch[1]) {
     const nextSong = switchSongMatch[1].replace(/^(?:por|a|el|la)\s+/, "").trim();
     const plat = (switchSongMatch[2] || "youtube").trim();
@@ -756,7 +778,13 @@ export async function executeSubuCommand(
     }
   }
 
-  // 0e. Tool: Cerrar cualquier app ("cierra YouTube", "cerrame Spotify")
+  // 0e. Tool: Cerrar ventana activa ("cierra esta ventana", "cierra esto") o cualquier app ("cierra YouTube")
+  if (/^(?:cierra|cerrar|cerrame|cerra)\s+(?:esta\s+ventana|esto|la\s+ventana\s+activa|eso)$/.test(q)) {
+    const res = await api?.close_active_window?.();
+    return res?.ok
+      ? { ok: true, reply: `Listo, cerrando ${res.title || "la ventana activa"}.` }
+      : { ok: false, reply: "No encontré una ventana activa para cerrar." };
+  }
   const closeAppMatch = q.match(/^(?:cierra|cerrar|cerrame|cerra|quita|quitame)\s+(?:la\s+app\s+|el\s+programa\s+|la\s+ventana\s+de\s+)?(.+)$/);
   if (closeAppMatch && closeAppMatch[1]) {
     const appTarget = closeAppMatch[1].trim();
@@ -764,6 +792,41 @@ export async function executeSubuCommand(
     return res?.ok
       ? { ok: true, reply: `Listo, cerrando ${appTarget}.` }
       : { ok: false, reply: `No encontré una ventana abierta de ${appTarget}.` };
+  }
+
+  // 0e2. Tool: Mover ventana entre Pantalla Principal (1) y Secundaria (2)
+  const moveWinMatch = q.match(
+    /^(?:pasa|pasame|mueve|moveme|trae|traeme|lleva|pon)\s+(?:la\s+ventana\s+de\s+|la\s+ventana\s+|esta\s+ventana|esta\s+app|(.+?))?\s*(?:a\s+la|al)\s+(pantalla\s+principal|pantalla\s+1|monitor\s+1|pantalla\s+secundaria|pantalla\s+2|monitor\s+2|otro\s+monitor|otra\s+pantalla)$/,
+  );
+  if (moveWinMatch) {
+    const rawHint = (moveWinMatch[1] || "").replace(/^(?:esta\s+ventana|esta\s+app|esto|eso)$/, "").trim();
+    const dest = moveWinMatch[2] || "";
+    const targetDisplay: "primary" | "secondary" = /principal|1/.test(dest) ? "primary" : "secondary";
+    const res = await api?.move_window_display?.(rawHint, targetDisplay);
+    return res?.ok
+      ? { ok: true, reply: `Listo, pasé ${res.title || "la ventana"} a tu ${res.target}.` }
+      : { ok: false, reply: "No encontré una ventana abierta para mover de pantalla." };
+  }
+
+  // 0e3. Tool: Abrir archivos recientes sin saber la ruta exacta ("abre el último PDF que descargué", "abre la última captura")
+  const recentFileMatch = q.match(
+    /^(?:abre|abrir|abreme|abrime|mostrame)\s+(?:el|la)\s+(?:ultimo|ultima|reciente)\s+(?:archivo|documento|pdf|video|foto|imagen|captura|word|excel|informe)\b(.*)$/,
+  );
+  if (recentFileMatch || /^(?:abre|abrir|abreme|abrime)\s+(?:el\s+archivo|el\s+documento|el\s+pdf|el\s+informe)\s+(.+)$/.test(q)) {
+    const res = await api?.open_recent_file?.(q);
+    return res?.ok
+      ? { ok: true, reply: `¡Claro! Abriendo ${res.name} desde ${res.folder}.` }
+      : { ok: false, reply: "No encontré un archivo reciente que coincida en tus carpetas." };
+  }
+
+  // 0e4. Consulta de ventanas abiertas ("qué tengo abierto", "qué ventanas están abiertas")
+  if (/\b(?:que\s+tengo\s+abierto|que\s+ventanas|que\s+programas\s+estan\s+abiertos)\b/.test(q)) {
+    const sys = await api?.get_system_context?.().catch(() => null);
+    const list = (sys?.openWindows || []).slice(0, 5).map((w) => w.processName);
+    if (list.length > 0) {
+      return { ok: true, reply: `Tienes abierto ahora mismo: ${list.join(", ")}.` };
+    }
+    return { ok: true, reply: "No detecté otras ventanas abiertas en este momento." };
   }
 
   // 0f. Tools diarios del sistema (modos/rutinas, portapapeles inteligente, recordatorios, git/terminal, captura, energía)
@@ -1687,7 +1750,7 @@ export async function executeSubuCommand(
     }
   }
 
-  // 11. Cerebro IA Híbrido (Opción B: Gemini API u Ollama local con keep_alive=90s + ventana de contexto)
+  // 11. Cerebro IA Híbrido ReAct (Razonar con Contexto Vivo de la PC → Actuar → Auto-aprender)
   if (ctx.aiBrainEnabled !== false && api?.nova_llm_route) {
     const pendingList = ctx.todos
       .filter((t) => !t.done)
@@ -1695,7 +1758,16 @@ export async function executeSubuCommand(
       .slice(0, 5)
       .join(", ");
     const recentHist = formatContextForLlm();
-    const ctxSummary = `Ciudad: ${getContextWindow().lastCity}, Batería ${ctx.telemetry.battery_percent}%, CPU ${ctx.telemetry.cpu_percent}%, RAM ${ctx.telemetry.ram_percent}%, Disco C libre ${ctx.telemetry.disk_c_free_gb} GB, Clima ${ctx.weather.temp_c}°C en ${ctx.weather.city}, Tareas pendientes: ${pendingList || "ninguna"}. Historial reciente: ${recentHist || "inicio de charla"}.`;
+    const sysCtx = await api?.get_system_context?.().catch(() => null);
+    const openWinsStr = (sysCtx?.openWindows || [])
+      .slice(0, 6)
+      .map((w) => `${w.processName} (${w.title.slice(0, 32)})`)
+      .join(", ");
+    const recentFilesStr = (sysCtx?.recentFiles || [])
+      .slice(0, 6)
+      .map((f) => `${f.name} [${f.folder}]`)
+      .join(", ");
+    const ctxSummary = `Usuario: ${sysCtx?.userName || "Hebert"}, Monitores: ${sysCtx?.displaysCount || 1}, Ventanas abiertas: ${openWinsStr || "ninguna"}, Archivos recientes: ${recentFilesStr || "ninguno"}, Ciudad: ${getContextWindow().lastCity}, Batería ${ctx.telemetry.battery_percent}%, CPU ${ctx.telemetry.cpu_percent}%, RAM ${ctx.telemetry.ram_percent}%, Disco C libre ${ctx.telemetry.disk_c_free_gb} GB, Clima ${ctx.weather.temp_c}°C en ${ctx.weather.city}, Tareas pendientes: ${pendingList || "ninguna"}. Historial reciente: ${recentHist || "inicio de charla"}.`;
     const llm = await api
       .nova_llm_route({
         utterance: q,
@@ -1718,26 +1790,35 @@ export async function executeSubuCommand(
           await executeNovaTool("open_app", a, ctx);
         } else if (t === "close_app" && a) {
           await api.close_app(a);
+        } else if (t === "close_active_window") {
+          await api.close_active_window?.();
+        } else if (t === "focus_app" && a) {
+          await api.focus_app?.(a);
+        } else if (t === "move_window_display") {
+          const targetDisp = act.platform === "primary" ? "primary" : "secondary";
+          await api.move_window_display?.(a, targetDisp);
+        } else if (t === "open_recent_file") {
+          await api.open_recent_file?.(a || q);
         } else if (t === "open_project" && a) {
           await api.open_project(a);
         } else if (t === "create_project" && a) {
           await api.create_project(a, act.platform || "proyectos_personales", true);
         } else if (t === "modo_programacion") {
-          await executeSubuCommand("modo programacion", ctx);
+          await executeSubuCommand("modo programacion", ctx, true);
         } else if (t === "modo_proyecto") {
-          await executeSubuCommand("modo proyecto", ctx);
+          await executeSubuCommand("modo proyecto", ctx, true);
         } else if (t === "modo_semana") {
-          await executeSubuCommand("modo semana", ctx);
+          await executeSubuCommand("modo semana", ctx, true);
         } else if (t === "modo_casa") {
-          await executeSubuCommand("modo casa", ctx);
+          await executeSubuCommand("modo casa", ctx, true);
         } else if (t === "modo_universidad") {
-          await executeSubuCommand("modo universidad", ctx);
+          await executeSubuCommand("modo universidad", ctx, true);
         } else if (t === "modo_descanso") {
-          await executeSubuCommand("modo descanso", ctx);
+          await executeSubuCommand("modo descanso", ctx, true);
         } else if (t === "briefing") {
-          await executeSubuCommand("resumen del dia", ctx);
+          await executeSubuCommand("resumen del dia", ctx, true);
         } else if (t === "smart_home") {
-          await executeSubuCommand(a === "lights_off" ? "apaga las luces" : "prende las luces", ctx);
+          await executeSubuCommand(a === "lights_off" ? "apaga las luces" : "prende las luces", ctx, true);
         } else if (t === "control_media" && a) {
           await api.media_control(a);
         } else if (t === "set_brightness" && typeof act.level === "number") {
@@ -1762,6 +1843,8 @@ export async function executeSubuCommand(
         "close_app",
         "open_project",
         "create_project",
+        "open_recent_file",
+        "move_window_display",
         "web_search",
         "add_todo",
         "modo_programacion",

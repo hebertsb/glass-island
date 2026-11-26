@@ -536,6 +536,227 @@ app.whenReady().then(() => {
     }
   });
 
+  // Escanea archivos recientes del usuario de forma 100% genérica (Descargas, Escritorio, Documentos, Capturas)
+  function scanUserRecentFiles(limit = 12) {
+    const home = os.homedir();
+    const dirs = [
+      { dir: path.join(home, "Downloads"), folder: "Descargas" },
+      { dir: path.join(home, "Downloads", "GlassDrop"), folder: "GlassDrop" },
+      { dir: path.join(home, "Desktop"), folder: "Escritorio" },
+      { dir: path.join(home, "Documents"), folder: "Documentos" },
+      { dir: path.join(home, "Pictures", "Screenshots"), folder: "Capturas" },
+    ].filter((d) => fs.existsSync(d.dir));
+
+    const found = [];
+    const now = Date.now();
+    for (const { dir, folder } of dirs) {
+      let entries = [];
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const e of entries) {
+        if (!e.isFile()) continue;
+        if (e.name.startsWith(".") || /^desktop\.ini$/i.test(e.name) || /\.lnk$/i.test(e.name)) continue;
+        const full = path.join(dir, e.name);
+        try {
+          const st = fs.statSync(full);
+          found.push({
+            name: e.name,
+            path: full,
+            folder,
+            ext: path.extname(e.name).toLowerCase().replace(/^\./, ""),
+            mtime: st.mtimeMs,
+            ageMins: Math.max(0, Math.round((now - st.mtimeMs) / 60000)),
+          });
+        } catch {
+          // ignore
+        }
+      }
+    }
+    found.sort((a, b) => b.mtime - a.mtime);
+    return found.slice(0, limit);
+  }
+
+  // Contexto Vivo del Sistema ("Ojos en la PC") para el bucle ReAct: ventanas abiertas + archivos recientes + monitores
+  ipcMain.handle("island:get-system-context", async () => {
+    const recentFiles = scanUserRecentFiles(10).map(({ name, path: fp, folder, ext, ageMins }) => ({
+      name,
+      path: fp,
+      folder,
+      ext,
+      ageMins,
+    }));
+    const displaysCount = screen.getAllDisplays().length;
+    const userName = (() => {
+      try {
+        return os.userInfo().username || "Usuario";
+      } catch {
+        return "Usuario";
+      }
+    })();
+
+    const winInfo = await new Promise((resolve) => {
+      const ps =
+        `[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; ` +
+        `$wins = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle -ne '' -and $_.ProcessName -ne 'electron' } | ` +
+        `Select-Object -First 12 @{n='processName';e={$_.ProcessName}}, @{n='title';e={$_.MainWindowTitle}}; ` +
+        `@($wins) | ConvertTo-Json -Compress`;
+      execFile(
+        PS_EXE,
+        ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", ps],
+        { windowsHide: true, timeout: 2200 },
+        (_err, stdout) => {
+          try {
+            const parsed = JSON.parse((stdout || "").trim() || "[]");
+            const arr = Array.isArray(parsed) ? parsed : parsed ? [parsed] : [];
+            resolve(arr);
+          } catch {
+            resolve([]);
+          }
+        },
+      );
+    });
+
+    return {
+      userName,
+      activeWindow: winInfo[0] || null,
+      openWindows: winInfo,
+      recentFiles,
+      displaysCount,
+    };
+  });
+
+  // Abre el archivo más reciente que coincida con tipo (pdf, video, foto, captura, word, excel) o nombre parcial
+  ipcMain.handle("island:open-recent-file", async (_e, queryHint) => {
+    const q = String(queryHint || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim();
+    const files = scanUserRecentFiles(40);
+    if (files.length === 0) return { ok: false };
+
+    let filtered = files;
+    if (/\b(captura|screenshot|pantallazo)\b/.test(q)) {
+      filtered = files.filter((f) => f.folder === "Capturas" || /^nova/i.test(f.name));
+    } else if (/\bpdf\b/.test(q)) {
+      filtered = files.filter((f) => f.ext === "pdf");
+    } else if (/\b(video|mp4|mkv|mov)\b/.test(q)) {
+      filtered = files.filter((f) => ["mp4", "mkv", "mov", "avi", "webm"].includes(f.ext));
+    } else if (/\b(foto|imagen|imagenes|png|jpg)\b/.test(q)) {
+      filtered = files.filter((f) => ["png", "jpg", "jpeg", "webp", "gif"].includes(f.ext));
+    } else if (/\b(word|docx|doc)\b/.test(q)) {
+      filtered = files.filter((f) => ["doc", "docx"].includes(f.ext));
+    } else if (/\b(excel|xlsx|csv|hoja)\b/.test(q)) {
+      filtered = files.filter((f) => ["xls", "xlsx", "csv"].includes(f.ext));
+    } else {
+      const keywords = q
+        .replace(/\b(el|la|los|las|ultimo|ultima|reciente|archivo|documento|que|descargue|baje|hoy|de|en|descargas|escritorio|documentos)\b/g, " ")
+        .split(/\s+/)
+        .filter((w) => w.length >= 2);
+      if (keywords.length > 0) {
+        const byName = files.filter((f) => {
+          const n = f.name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+          return keywords.some((k) => n.includes(k));
+        });
+        if (byName.length > 0) filtered = byName;
+      }
+    }
+
+    const chosen = filtered[0] || files[0];
+    if (!chosen) return { ok: false };
+    try {
+      await shell.openPath(chosen.path);
+      return { ok: true, name: chosen.name, path: chosen.path, folder: chosen.folder };
+    } catch {
+      return { ok: false };
+    }
+  });
+
+  // Mueve la ventana activa o una app nombrada a la Pantalla Principal (1) o Secundaria (2)
+  ipcMain.handle("island:move-window-display", async (_e, appHint, targetDisplay = "secondary") => {
+    const hint = String(appHint || "").replace(/[^a-zA-Z0-9 ._-]/g, "").trim();
+    const wantSecondary = String(targetDisplay || "").toLowerCase() === "secondary";
+    const displays = screen.getAllDisplays();
+    const primary = screen.getPrimaryDisplay();
+    const target = wantSecondary
+      ? displays.find((d) => d.id !== primary.id) || primary
+      : primary;
+    const bx = Math.round(target.workArea.x + 40);
+    const by = Math.round(target.workArea.y + 40);
+    const bw = Math.max(640, Math.round(target.workArea.width - 80));
+    const bh = Math.max(480, Math.round(target.workArea.height - 80));
+
+    return await new Promise((resolve) => {
+      const ps = `
+        Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class GIMove { [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c); [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int X, int Y, int W, int H, bool repaint); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h); }'
+        $hint = '${hint}';
+        if ($hint -ne '') {
+          $p = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and $_.ProcessName -ne 'electron' -and ($_.ProcessName -like "*$hint*" -or $_.MainWindowTitle -like "*$hint*") } | Select-Object -First 1
+        } else {
+          $p = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle -ne '' -and $_.ProcessName -ne 'electron' } | Select-Object -First 1
+        }
+        if ($null -ne $p) {
+          $h = $p.MainWindowHandle
+          [GIMove]::ShowWindow($h, 9) | Out-Null
+          [GIMove]::MoveWindow($h, ${bx}, ${by}, ${bw}, ${bh}, $true) | Out-Null
+          [GIMove]::SetForegroundWindow($h) | Out-Null
+          Write-Output ("MOVED|" + $p.MainWindowTitle)
+        } else {
+          Write-Output "NONE"
+        }
+      `;
+      execFile(
+        PS_EXE,
+        ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", ps],
+        { windowsHide: true, timeout: 4000 },
+        (_err, stdout) => {
+          const out = String(stdout || "").trim();
+          if (out.startsWith("MOVED|")) {
+            resolve({
+              ok: true,
+              title: out.slice(6),
+              target: wantSecondary ? "pantalla secundaria" : "pantalla principal",
+            });
+          } else {
+            resolve({ ok: false });
+          }
+        },
+      );
+    });
+  });
+
+  // Cierra la ventana activa (excluyendo GlassIsland) para "cierra esta ventana" / "cierra esto"
+  ipcMain.handle("island:close-active-window", async () => {
+    return await new Promise((resolve) => {
+      const ps = `
+        $p = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle -ne '' -and $_.ProcessName -ne 'electron' } | Select-Object -First 1
+        if ($null -ne $p) {
+          $t = $p.MainWindowTitle
+          $p.CloseMainWindow() | Out-Null
+          Write-Output ("CLOSED|" + $t)
+        } else {
+          Write-Output "NONE"
+        }
+      `;
+      execFile(
+        PS_EXE,
+        ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", ps],
+        { windowsHide: true, timeout: 3000 },
+        (_err, stdout) => {
+          const out = String(stdout || "").trim();
+          if (out.startsWith("CLOSED|")) {
+            resolve({ ok: true, title: out.slice(7) });
+          } else {
+            resolve({ ok: false });
+          }
+        },
+      );
+    });
+  });
+
   ipcMain.handle("island:get-clipboard-rich", async () => {
     try {
       const hasPng = await clipboard.has("image/png").catch(() => false);
@@ -1036,32 +1257,31 @@ app.whenReady().then(() => {
     if (!utterance) return { ok: false };
 
     const systemPrompt =
-      `Eres ${assistantName}, un asistente personal inteligente estilo Jarvis en la laptop de Hebert (ingeniero/programador de software en Santa Cruz, Bolivia). ` +
-      `Cuando Hebert pregunte por siglas o conceptos técnicos (como MCP, BaaS, API, Docker, REST, JWT, etc.), responde SIEMPRE en contexto de ingeniería de software y tecnología actual (por ejemplo: MCP = Model Context Protocol de Anthropic, BaaS = Backend as a Service). ` +
+      `Eres ${assistantName}, un asistente personal inteligente estilo J.A.R.V.I.S. con arquitectura ReAct (Razonar → Actuar) en Windows. ` +
+      `Primero RAZONA internamente usando el Contexto Vivo de la PC (ventanas abiertas, archivos recientes en Descargas/Escritorio/Documentos, monitores, tareas y estado del sistema) para entender exactamente qué quiere el usuario sin pedirle que te entrene. ` +
+      `Cuando pregunte por siglas o conceptos técnicos (MCP, BaaS, API, Docker, REST, JWT, etc.), responde SIEMPRE en contexto de ingeniería de software y tecnología actual. ` +
       `Responde SIEMPRE SOLO con un JSON válido (sin markdown ni texto fuera del JSON) con este formato:\n` +
-      `{"actions":[{"tool":"<tool>","arg":"<valor>","platform":"youtube|youtube music|spotify","level":50}],"reply":"<respuesta corta, cálida y natural en español latino>","learn":true}\n` +
+      `{"thought":"<razonamiento breve en 1 frase>","actions":[{"tool":"<tool>","arg":"<valor>","platform":"youtube|youtube music|spotify|primary|secondary","level":50}],"reply":"<respuesta corta, serena y natural en español latino>","learn":true}\n` +
       `Tools disponibles:\n` +
       `- play_music (arg: nombre canción/artista, platform: youtube|youtube music|spotify)\n` +
       `- open_app (arg: nombre de la app)\n` +
       `- close_app (arg: nombre de la app)\n` +
+      `- close_active_window (cierra la ventana activa actual cuando dice "cierra esto" o "cierra esta ventana")\n` +
+      `- focus_app (arg: nombre de proceso/app ya abierta para traerla al primer plano)\n` +
+      `- move_window_display (arg: nombre de app o vacío para ventana activa, platform: primary|secondary)\n` +
+      `- open_recent_file (arg: tipo o nombre del archivo reciente, ej. "pdf", "video", "captura", "informe")\n` +
       `- open_project (arg: nombre del proyecto existente)\n` +
-      `- create_project (arg: nombre de la carpeta/proyecto nuevo a crear y abrir en VS Code; si el usuario menciona "escritorio", "universidad" o "documentos", ponlo en platform, si no deja "proyectos_personales")\n` +
-      `- modo_programacion (activar entorno de programación: VS Code + música + brillo + Focus; úsalo también si dice "vamos a codear", "empecemos a programar", "modo dev", "modo programador")\n` +
-      `- modo_proyecto (listar proyectos recientes para elegir cuál continuar)\n` +
-      `- modo_semana (organizar la semana: Google Calendar + tareas)\n` +
-      `- modo_casa (modo noche/casa: brillo 40%, tema oscuro, luces y música lo-fi)\n` +
-      `- modo_universidad (abrir carpeta Universidad y leer tareas)\n` +
-      `- modo_descanso (pausar Focus, brillo 60% y música chill)\n` +
-      `- briefing (resumen del día: hora, clima, tareas y espacio libre en DiscoClaro)\n` +
+      `- create_project (arg: nombre de la carpeta/proyecto nuevo a crear y abrir en VS Code; platform: proyectos_personales|escritorio|universidad|documentos)\n` +
+      `- modo_programacion | modo_proyecto | modo_semana | modo_casa | modo_universidad | modo_descanso | briefing\n` +
       `- smart_home (arg: lights_on|lights_off)\n` +
       `- control_media (arg: play_pause|next|prev|vol_up|vol_down|vol_mute)\n` +
       `- set_brightness (level: 10..100)\n` +
       `- start_focus (level: minutos 5..60)\n` +
       `- add_todo (arg: texto de la tarea)\n` +
       `- web_search (arg: búsqueda en Google)\n` +
-      `- system_action (arg: screenshot|lock|downloads|documents|desktop|university)\n` +
+      `- system_action (arg: screenshot:primary|screenshot:secondary|screenshot:all|lock|downloads|documents|desktop|university|minimize_all|hibernate|sleep)\n` +
       `- chat (si solo es una pregunta conversacional o duda general; no requiere ejecutar tool, solo responder en reply).\n` +
-      `Contexto actual de la laptop: ${contextSummary}`;
+      `Contexto vivo actual de la PC: ${contextSummary}`;
 
     const parseJsonLoose = (rawText) => {
       const cleaned = String(rawText || "")
