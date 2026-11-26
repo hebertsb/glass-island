@@ -557,6 +557,8 @@ export default function App() {
   const [shelfDragOver, setShelfDragOver] = useState(false);
   const [powerPlan, setPowerPlan] = useState<"power_saver" | "power_balanced" | "power_high">("power_balanced");
   const [inFullscreen, setInFullscreen] = useState(false);
+  const [glassDropUrl, setGlassDropUrl] = useState<string | null>(null);
+  const [glassDropToast, setGlassDropToast] = useState<string | null>(null);
   const [nowPlaying, setNowPlaying] = useState<NowPlayingData>(() => {
     try {
       const saved = localStorage.getItem("glassisland.lastTrack.v1");
@@ -1114,6 +1116,36 @@ export default function App() {
       scheduleCleanReset();
     }
   }
+
+  // Sincroniza los archivos del Estante con el servidor Wi-Fi local GlassDrop (para cualquier celular Android/iOS)
+  useEffect(() => {
+    getBridge()?.glassdrop_sync?.(config.shelfFiles).catch(() => {});
+  }, [config.shelfFiles]);
+
+  // Escucha archivos o texto recibidos desde cualquier celular por Wi-Fi (GlassDrop)
+  useEffect(() => {
+    const api = getBridge();
+    if (!api?.on_glassdrop_event) return;
+    const unsub = api.on_glassdrop_event((msg) => {
+      if (msg.kind === "file" && msg.file) {
+        const incoming = msg.file;
+        setConfig((p) => ({
+          ...p,
+          shelfFiles: [incoming, ...p.shelfFiles.filter((x) => x.path !== incoming.path)],
+        }));
+        playDoneChime(configRef.current.hudSounds !== false);
+        setGlassDropToast(`📥 Recibido desde celular: ${incoming.name}`);
+        window.setTimeout(() => setGlassDropToast(null), 4500);
+        triggerBurst("happy", 1800);
+      } else if (msg.kind === "clip" && msg.text) {
+        setClipHistory((prev) => [msg.text!, ...prev.filter((x) => x !== msg.text)].slice(0, 12));
+        playDoneChime(configRef.current.hudSounds !== false);
+        setGlassDropToast("📋 Texto copiado al portapapeles desde tu celular");
+        window.setTimeout(() => setGlassDropToast(null), 3500);
+      }
+    });
+    return () => unsub();
+  }, []);
 
   // Detecta juegos / videos en pantalla completa cada 1.4s para auto-ocultar el notch como la barra de tareas
   useEffect(() => {
@@ -2692,14 +2724,90 @@ export default function App() {
                     playDoneChime(config.hudSounds !== false);
                   }}
                 >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                     <span className="tile-kicker">
-                      ESTANTE DE ARCHIVOS ({config.shelfFiles.length}) · ARRASTRA Y SUELTA AQUÍ
+                      ESTANTE ({config.shelfFiles.length}) · ARRASTRA O ENVÍA A TU CELULAR
                     </span>
-                    <button type="button" className="glass-btn glass-btn--white" onClick={handleAddShelfFiles}>
-                      <Plus size={12} /> Añadir archivos
-                    </button>
+                    <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+                      <button
+                        type="button"
+                        className={`glass-btn${glassDropUrl ? " glass-btn--white" : ""}`}
+                        onClick={async () => {
+                          if (glassDropUrl) {
+                            await getBridge()?.glassdrop_stop?.().catch(() => {});
+                            setGlassDropUrl(null);
+                          } else {
+                            const res = await getBridge()?.glassdrop_start?.(config.shelfFiles).catch(() => null);
+                            if (res?.running && res.url) {
+                              setGlassDropUrl(res.url);
+                              playWakeChime(config.hudSounds !== false);
+                            }
+                          }
+                        }}
+                        title="Conecta cualquier celular (Android o iPhone) por la misma red Wi-Fi mediante código QR"
+                      >
+                        {glassDropUrl ? "✕ Cerrar Wi-Fi" : "📱 Enviar / Recibir Celular"}
+                      </button>
+                      <button type="button" className="glass-btn glass-btn--white" onClick={handleAddShelfFiles}>
+                        <Plus size={12} /> Archivos
+                      </button>
+                    </div>
                   </div>
+                  {glassDropToast && (
+                    <div
+                      style={{
+                        fontSize: 11,
+                        padding: "5px 9px",
+                        borderRadius: 9,
+                        background: "rgba(56, 189, 248, 0.2)",
+                        border: "1px solid rgba(56, 189, 248, 0.45)",
+                        color: "#e0f2fe",
+                      }}
+                    >
+                      {glassDropToast}
+                    </div>
+                  )}
+                  {glassDropUrl && (
+                    <div
+                      className="glass-card-row"
+                      style={{
+                        gap: 10,
+                        alignItems: "center",
+                        background: "rgba(15, 23, 42, 0.55)",
+                        border: "1px solid rgba(56, 189, 248, 0.4)",
+                        padding: "8px 10px",
+                      }}
+                    >
+                      <img
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=120x120&margin=4&data=${encodeURIComponent(glassDropUrl)}`}
+                        alt="QR GlassDrop"
+                        width={68}
+                        height={68}
+                        style={{ borderRadius: 8, background: "#fff", flexShrink: 0 }}
+                      />
+                      <div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column", gap: 3 }}>
+                        <strong style={{ fontSize: 11.5, color: "#7dd3fc" }}>
+                          📱 Escanea desde cualquier celular (mismo Wi-Fi)
+                        </strong>
+                        <span style={{ fontSize: 10.5, opacity: 0.82 }}>
+                          Descarga los archivos del Estante o sube fotos/videos directo a <code>Descargas\GlassDrop</code>.
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontFamily: "ui-monospace, monospace",
+                            opacity: 0.72,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                          title={glassDropUrl}
+                        >
+                          {glassDropUrl}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                   {config.shelfFiles.length === 0 ? (
                     <div
                       className="tile-sub"

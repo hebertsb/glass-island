@@ -6,6 +6,7 @@ const https = require("https");
 const os = require("os");
 const path = require("path");
 const readline = require("readline");
+const { createGlassDropServer } = require("./glassdrop.cjs");
 
 const GEMINI_HTTPS_AGENT = new https.Agent({ keepAlive: true, maxSockets: 4 });
 
@@ -2132,7 +2133,43 @@ app.whenReady().then(() => {
     }
   });
 
+  // --- GlassDrop: transferencia Wi-Fi bidireccional Laptop <-> Celular (sin apps externas) ---
+  let shelfFilesCache = [];
+  const glassDrop = createGlassDropServer({
+    getShelfFiles: () => shelfFilesCache,
+    onFileReceived: (fileItem) => {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send("island:glassdrop-event", { kind: "file", file: fileItem });
+      }
+    },
+    onClipReceived: (text) => {
+      try {
+        clipboard.writeText(text);
+      } catch {
+        // ignore
+      }
+      if (win && !win.isDestroyed()) {
+        win.webContents.send("island:glassdrop-event", { kind: "clip", text });
+      }
+    },
+  });
+
+  ipcMain.handle("island:glassdrop-sync", (_e, files) => {
+    shelfFilesCache = Array.isArray(files) ? files : [];
+    return true;
+  });
+
+  ipcMain.handle("island:glassdrop-start", async (_e, files) => {
+    if (Array.isArray(files)) shelfFilesCache = files;
+    return await glassDrop.start();
+  });
+
+  ipcMain.handle("island:glassdrop-stop", () => {
+    return glassDrop.stop();
+  });
+
   ipcMain.handle("island:quit", () => {
+    glassDrop.stop();
     app.quit();
   });
 });

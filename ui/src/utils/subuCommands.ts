@@ -872,6 +872,23 @@ export async function executeSubuCommand(
     return { ok: true, reply };
   }
 
+  // 1h) CONECTAR CELULAR POR WI-FI (GlassDrop genérico Android/iOS)
+  if (
+    q.includes("conecta mi celular") ||
+    q.includes("conectar celular") ||
+    q.includes("pasar archivo al celular") ||
+    q.includes("enviar al celular") ||
+    q.includes("glassdrop")
+  ) {
+    ctx.setActiveTab?.("shelf");
+    const res = await api?.glassdrop_start?.().catch(() => null);
+    const reply = res?.running
+      ? "Listo, Hebert. Activé GlassDrop en el Estante. Escanea el código QR con cualquier celular en tu mismo Wi-Fi para enviar o recibir archivos."
+      : "Abrí el Estante. Pulsa Enviar o Recibir Celular para mostrar el código QR Wi-Fi.";
+    pushContextTurn("assistant", reply, "glassdrop");
+    return { ok: true, reply, keepOpen: true };
+  }
+
   // 2) Recordatorios con alarma hablada ("recuérdame en 15 minutos subir los cambios")
   const remMatch = q.match(
     /^(?:recuerdame|recordame|avisame|pon una alarma|pon un recordatorio)\s+en\s+(\d{1,3})\s+(segundos?|minutos?|horas?)\s*(?:que\s+|de\s+|para\s+)?(.+)$/,

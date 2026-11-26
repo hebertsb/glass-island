@@ -66,6 +66,14 @@ const api = {
       return "";
     }
   },
+  glassdrop_start: (files) => ipcRenderer.invoke("island:glassdrop-start", files),
+  glassdrop_stop: () => ipcRenderer.invoke("island:glassdrop-stop"),
+  glassdrop_sync: (files) => ipcRenderer.invoke("island:glassdrop-sync", files),
+  on_glassdrop_event: (cb) => {
+    const fn = (_e, msg) => cb(msg);
+    ipcRenderer.on("island:glassdrop-event", fn);
+    return () => ipcRenderer.removeListener("island:glassdrop-event", fn);
+  },
   quit_app: () => ipcRenderer.invoke("island:quit"),
 };
 

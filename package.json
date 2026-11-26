@@ -18,6 +18,7 @@
     "files": [
       "electron/main.cjs",
       "electron/preload.cjs",
+      "electron/glassdrop.cjs",
       "ui/dist/**/*",
       "package.json"
     ],

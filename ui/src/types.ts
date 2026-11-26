@@ -373,6 +373,12 @@ export interface GlassIslandApi {
   quick_control: (action: string) => Promise<{ ok: boolean; plan?: string; brightness?: number }>;
   is_fullscreen: () => Promise<{ fullscreen: boolean }>;
   get_file_path: (file: File) => string;
+  glassdrop_start: (files?: ShelfFile[]) => Promise<{ running: boolean; url?: string; ip?: string; port?: number; error?: string }>;
+  glassdrop_stop: () => Promise<{ running: boolean }>;
+  glassdrop_sync: (files: ShelfFile[]) => Promise<boolean>;
+  on_glassdrop_event: (
+    cb: (msg: { kind: "file" | "clip"; file?: ShelfFile; text?: string }) => void,
+  ) => () => void;
   quit_app: () => Promise<void>;
 }
 
