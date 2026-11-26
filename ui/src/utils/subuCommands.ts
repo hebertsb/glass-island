@@ -36,6 +36,12 @@ import {
   type AttitudeProfile,
   type PersonalityMode,
 } from "./novaPersonality";
+import {
+  clasificarEspecialista,
+  evaluarPoliticaAprobacion,
+  resolverCalculoCodeAct,
+  UMBRAL_CONFIANZA_ROUTER,
+} from "./novaAgenticPatterns";
 
 export {
   hasActiveConversationExpectation,
@@ -611,14 +617,28 @@ export async function executeSubuCommand(
     }
   }
 
-  // Confirmación contextual pendiente ("sí", "sí ábrelo en copilot", "dale", "de una") -> abre la app y pega el prompt
+  // Confirmación contextual pendiente / Puerta Humana (Patrón 09 · Human-in-the-Loop: "sí", "aprobar", "confirmar", "rechazar", "cancelar")
+  if (/^(?:no|cancelar|cancela|rechazar|rechaza|mejor no)\b/.test(q)) {
+    const cancelled = consumePendingConfirm();
+    if (cancelled) {
+      const reply = `Entendido, ${boss}. Cancelé la acción: ${cancelled.label}.`;
+      pushContextTurn("assistant", reply, "chat");
+      return { ok: true, reply };
+    }
+  }
   if (
-    /^(?:si|sii|claro|dale|de una|porfa|por favor|abrelo|abrela|abrilo|abrila|quiero verlo|mostramelo)\b/.test(
+    /^(?:si|sii|claro|dale|de una|porfa|por favor|aprobar|apruebo|confirmar|confirmo|procede|adelante|abrelo|abrela|abrilo|abrila|quiero verlo|mostramelo)\b/.test(
       q,
     )
   ) {
     const pending = consumePendingConfirm();
     if (pending) {
+      if (pending.kind === "system_action") {
+        await api?.system_action(pending.target);
+        const reply = `Aprobado, ${boss}. Ejecutando ${pending.label}.`;
+        pushContextTurn("assistant", reply, "system_action", pending.target);
+        return { ok: true, reply };
+      }
       if (pending.promptText && api?.launch_and_paste) {
         await api.launch_and_paste(pending.target, pending.promptText, pending.label);
       } else {
@@ -630,6 +650,26 @@ export async function executeSubuCommand(
       pushContextTurn("assistant", reply, "open_app", pending.label);
       return { ok: true, reply };
     }
+  }
+
+  // Patrón 06 · CodeAct seguro: cálculos exactos, porcentajes y conteo de archivos en < 1 ms sin alucinar
+  const codeActCalc = resolverCalculoCodeAct(q);
+  if (codeActCalc.matched && codeActCalc.reply) {
+    pushContextTurn("assistant", codeActCalc.reply, "chat", codeActCalc.expression);
+    return { ok: true, reply: codeActCalc.reply };
+  }
+  if (/\b(?:cuantos\s+(?:archivos|pdfs?|videos?|fotos?|imagenes?|documentos?))\b/.test(q)) {
+    const sys = await api?.get_system_context?.().catch(() => null);
+    const files = sys?.recentFiles || [];
+    const wantPdf = /\bpdfs?\b/.test(q);
+    const filtered = wantPdf ? files.filter((f) => f.ext === "pdf") : files;
+    const names = filtered.slice(0, 3).map((f) => f.name).join(", ");
+    const reply =
+      filtered.length > 0
+        ? `Detecté ${filtered.length} ${wantPdf ? "archivos PDF recientes" : "archivos recientes"} en tus carpetas (los más nuevos: ${names}).`
+        : "No encontré archivos recientes de ese tipo en tus carpetas.";
+    pushContextTurn("assistant", reply, "system_status");
+    return { ok: true, reply };
   }
 
   // Ventana de contexto GENÉRICA: resuelve seguimientos de cualquier tema (música, apps, brillo, tareas, clima)
@@ -772,7 +812,22 @@ export async function executeSubuCommand(
   }
 
   // 0b. Hibernar laptop directamente ("hiberna la laptop", "modo hibernar", "pon hibernacion")
+  // Patrón 09 · Human-in-the-Loop: evalúa PoliticaAprobacion en código
   if (/\b(?:hiberna|hibernar|hibernacion)\b/.test(q)) {
+    const pol = evaluarPoliticaAprobacion("hibernate");
+    if (pol.nivel === "APROBAR" && !/\b(?:confirmado|confirmar|forzar|ahora mismo|sin preguntar)\b/.test(q)) {
+      setPendingConfirm({
+        kind: "system_action",
+        target: "hibernate",
+        label: pol.descripcionAccion,
+        at: Date.now(),
+      });
+      return {
+        ok: true,
+        keepOpen: true,
+        reply: `${boss}, requiere aprobación: ¿confirmas ${pol.descripcionAccion}? Di "sí" o "aprobar" para ejecutar.`,
+      };
+    }
     await api?.system_action("hibernate");
     return { ok: true, reply: `Entendido, ${boss}. Hibernando tu laptop ahora.` };
   }
@@ -868,9 +923,30 @@ export async function executeSubuCommand(
     else if (/^(?:whatsapp|wasap|wsp)$/i.test(rawHint)) rawHint = "WhatsApp";
     else if (/^(?:spotify|espotifai)$/i.test(rawHint)) rawHint = "Spotify";
     const res = await api?.move_window_display?.(rawHint, targetDisplay);
-    return res?.ok
-      ? { ok: true, reply: `Listo, traje ${res.title || "la ventana"} en primer plano a tu ${res.target}.` }
-      : { ok: false, reply: "No encontré una ventana abierta para mover de pantalla." };
+    if (res?.ok) {
+      return { ok: true, reply: `Listo, traje ${res.title || "la ventana"} en primer plano a tu ${res.target}.` };
+    }
+    // Patrón 05 · Verificación de Observación y Replanificación (evita "confiar sin verificar"):
+    // Si la observación dice que la ventana NO estaba abierta, la abre primero y luego la mueve
+    if (rawHint) {
+      let appsList = ctx.installedApps;
+      if (appsList.length === 0) appsList = (await api?.list_installed_apps().catch(() => [])) || [];
+      const matchedApp = appsList.find(
+        (a) =>
+          norm(a.name).includes(norm(rawHint)) ||
+          norm(a.processName).includes(norm(rawHint)),
+      );
+      if (matchedApp) {
+        await api?.launch(matchedApp.lnkPath || matchedApp.exePath);
+        await api?.move_window_display?.(rawHint, targetDisplay).catch(() => {});
+        const destLabel = targetDisplay === "secondary" ? "pantalla secundaria" : "pantalla principal";
+        return {
+          ok: true,
+          reply: `Verifiqué que ${matchedApp.name} no estaba abierto, así que lo inicié y lo llevé a tu ${destLabel}.`,
+        };
+      }
+    }
+    return { ok: false, reply: "Verifiqué tus ventanas activas y no encontré esa aplicación abierta para moverla." };
   }
 
   // 0e3. Tool: Abrir archivos recientes sin saber la ruta exacta ("abre el último PDF que descargué", "abre la última captura", "abre la última")
@@ -1214,10 +1290,38 @@ export async function executeSubuCommand(
     return { ok: true, reply: "Listo, todas las ventanas minimizadas." };
   }
   if (q.includes("vacia la papelera") || q.includes("vaciar papelera") || q.includes("limpia la papelera")) {
+    const pol = evaluarPoliticaAprobacion("empty_recycle_bin");
+    if (pol.nivel === "APROBAR" && !/\b(?:confirmado|confirmar|forzar|ahora mismo|sin preguntar)\b/.test(q)) {
+      setPendingConfirm({
+        kind: "system_action",
+        target: "empty_recycle_bin",
+        label: pol.descripcionAccion,
+        at: Date.now(),
+      });
+      return {
+        ok: true,
+        keepOpen: true,
+        reply: `${boss}, acción irreversible (nivel Aprobar): ¿confirmas ${pol.descripcionAccion}? Di "sí" o "aprobar".`,
+      };
+    }
     await api?.system_action("empty_recycle_bin");
     return { ok: true, reply: "¡Belleza! Papelera de reciclaje vaciada." };
   }
   if (q.includes("suspende la laptop") || q.includes("suspender laptop") || q.includes("suspende el pc")) {
+    const pol = evaluarPoliticaAprobacion("sleep");
+    if (pol.nivel === "APROBAR" && !/\b(?:confirmado|confirmar|forzar|ahora mismo|sin preguntar)\b/.test(q)) {
+      setPendingConfirm({
+        kind: "system_action",
+        target: "sleep",
+        label: pol.descripcionAccion,
+        at: Date.now(),
+      });
+      return {
+        ok: true,
+        keepOpen: true,
+        reply: `${boss}, requiere aprobación: ¿confirmas ${pol.descripcionAccion}? Di "sí" o "aprobar" para proceder.`,
+      };
+    }
     await api?.system_action("sleep");
     return { ok: true, reply: "Suspendiendo tu laptop. ¡Hasta pronto!" };
   }
@@ -1833,7 +1937,13 @@ export async function executeSubuCommand(
       .slice(0, 6)
       .map((f) => `${f.name} [${f.folder}]`)
       .join(", ");
-    const ctxSummary = `Usuario: ${ctx.userName?.trim() || sysCtx?.userName || "Jefe"}, Monitores: ${sysCtx?.displaysCount || 1}, Ventanas abiertas: ${openWinsStr || "ninguna"}, Archivos recientes: ${recentFilesStr || "ninguno"}, Ciudad: ${getContextWindow().lastCity}, Batería ${ctx.telemetry.battery_percent}%, CPU ${ctx.telemetry.cpu_percent}%, RAM ${ctx.telemetry.ram_percent}%, Disco C libre ${ctx.telemetry.disk_c_free_gb} GB, Clima ${ctx.weather.temp_c}°C en ${ctx.weather.city}, Tareas pendientes: ${pendingList || "ninguna"}. Historial reciente: ${recentHist || "inicio de charla"}.`;
+    // Patrón 07 · Router y Especialistas con umbral de confianza (0.6)
+    const ruta = clasificarEspecialista(q);
+    const specTag =
+      ruta.confianza >= UMBRAL_CONFIANZA_ROUTER
+        ? `Especialista activo: ${ruta.especialista} (confianza ${ruta.confianza}, tools focalizadas: ${ruta.herramientasPermitidas.join(", ")}). `
+        : `Especialista: general (confianza ${ruta.confianza} < ${UMBRAL_CONFIANZA_ROUTER}; si la orden es ambigua, pide aclaración). `;
+    const ctxSummary = `${specTag}Usuario: ${ctx.userName?.trim() || sysCtx?.userName || "Jefe"}, Monitores: ${sysCtx?.displaysCount || 1}, Ventanas abiertas: ${openWinsStr || "ninguna"}, Archivos recientes: ${recentFilesStr || "ninguno"}, Ciudad: ${getContextWindow().lastCity}, Batería ${ctx.telemetry.battery_percent}%, CPU ${ctx.telemetry.cpu_percent}%, RAM ${ctx.telemetry.ram_percent}%, Disco C libre ${ctx.telemetry.disk_c_free_gb} GB, Clima ${ctx.weather.temp_c}°C en ${ctx.weather.city}, Tareas pendientes: ${pendingList || "ninguna"}. Historial reciente: ${recentHist || "inicio de charla"}.`;
     const llm = await api
       .nova_llm_route({
         utterance: q,
@@ -1847,28 +1957,53 @@ export async function executeSubuCommand(
 
     if (llm?.ok && llm.data) {
       const actions = Array.isArray(llm.data.actions) ? llm.data.actions : [];
+      const failedObservations: string[] = [];
       for (const act of actions) {
         const t = String(act.tool || "");
         const a = String(act.arg || "").trim();
+        // Patrón 09 · Verifica Política de Aprobación incluso si la acción fue propuesta por el LLM
+        const pol = evaluarPoliticaAprobacion(t, a);
+        if (pol.nivel === "APROBAR") {
+          setPendingConfirm({
+            kind: "system_action",
+            target: a || t,
+            label: pol.descripcionAccion,
+            at: Date.now(),
+          });
+          return {
+            ok: true,
+            keepOpen: true,
+            reply: `${boss}, política de seguridad (nivel Aprobar): ¿confirmas ${pol.descripcionAccion}? Di "sí" o "aprobar".`,
+          };
+        }
         if (t === "play_music" && a) {
-          await api.play_media_query(a, act.platform || "youtube");
+          const r = await api.play_media_query(a, act.platform || "youtube");
+          if (!r?.ok) failedObservations.push(`no se pudo reproducir ${a}`);
         } else if (t === "open_app" && a) {
-          await executeNovaTool("open_app", a, ctx);
+          const r = await executeNovaTool("open_app", a, ctx);
+          if (!r.ok) failedObservations.push(`no encontré la app ${a}`);
         } else if (t === "close_app" && a) {
-          await api.close_app(a);
+          const r = await api.close_app(a);
+          if (!r?.ok) failedObservations.push(`no había ventana abierta de ${a}`);
         } else if (t === "close_active_window") {
-          await api.close_active_window?.();
+          const r = await api.close_active_window?.();
+          if (!r?.ok) failedObservations.push("no había ventana activa para cerrar");
         } else if (t === "focus_app" && a) {
-          await api.focus_app?.(a);
+          const r = await api.focus_app?.(a);
+          if (!r?.ok) failedObservations.push(`${a} no estaba abierto`);
         } else if (t === "move_window_display") {
           const targetDisp = act.platform === "primary" ? "primary" : "secondary";
-          await api.move_window_display?.(a, targetDisp);
+          const r = await api.move_window_display?.(a, targetDisp);
+          if (!r?.ok) failedObservations.push(`no encontré la ventana ${a || "activa"} para moverla`);
         } else if (t === "open_recent_file") {
-          await api.open_recent_file?.(a || q);
+          const r = await api.open_recent_file?.(a || q);
+          if (!r?.ok) failedObservations.push(`no encontré un archivo reciente para "${a || q}"`);
         } else if (t === "open_project" && a) {
-          await api.open_project(a);
+          const r = await api.open_project(a);
+          if (!r?.ok) failedObservations.push(`no encontré el proyecto ${a}`);
         } else if (t === "create_project" && a) {
-          await api.create_project(a, act.platform || "proyectos_personales", true);
+          const r = await api.create_project(a, act.platform || "proyectos_personales", true);
+          if (!r?.ok) failedObservations.push(`no se pudo crear el proyecto ${a}`);
         } else if (t === "modo_programacion") {
           await executeSubuCommand("modo programacion", ctx, true);
         } else if (t === "modo_proyecto") {
@@ -1934,7 +2069,11 @@ export async function executeSubuCommand(
         );
       }
 
-      const llmReply = llm.data.reply || `Listo, ${boss}.`;
+      // Patrón 01/05 · Verificación de Observación: nunca afirmar éxito si una herramienta devolvió error
+      const llmReply =
+        failedObservations.length > 0
+          ? `Verifiqué el resultado y ${failedObservations.join(", ")}.`
+          : llm.data.reply || `Listo, ${boss}.`;
       pushContextTurn(
         "assistant",
         llmReply,
