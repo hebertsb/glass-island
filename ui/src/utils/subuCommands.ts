@@ -190,15 +190,15 @@ export async function executeNovaTool(
         }
       : { ok: false, reply: `No pude crear el proyecto ${cleanArg}.` };
   }
-  if (tool === "modo_programacion") return await executeSubuCommand("modo programacion", ctx);
-  if (tool === "modo_proyecto") return await executeSubuCommand("modo proyecto", ctx);
-  if (tool === "modo_semana") return await executeSubuCommand("modo semana", ctx);
-  if (tool === "modo_casa") return await executeSubuCommand("modo casa", ctx);
-  if (tool === "modo_universidad") return await executeSubuCommand("modo universidad", ctx);
-  if (tool === "modo_descanso") return await executeSubuCommand("modo descanso", ctx);
-  if (tool === "briefing") return await executeSubuCommand("resumen del dia", ctx);
+  if (tool === "modo_programacion") return await executeSubuCommand("modo programacion", ctx, true);
+  if (tool === "modo_proyecto") return await executeSubuCommand("modo proyecto", ctx, true);
+  if (tool === "modo_semana") return await executeSubuCommand("modo semana", ctx, true);
+  if (tool === "modo_casa") return await executeSubuCommand("modo casa", ctx, true);
+  if (tool === "modo_universidad") return await executeSubuCommand("modo universidad", ctx, true);
+  if (tool === "modo_descanso") return await executeSubuCommand("modo descanso", ctx, true);
+  if (tool === "briefing") return await executeSubuCommand("resumen del dia", ctx, true);
   if (tool === "smart_home") {
-    return await executeSubuCommand(cleanArg === "lights_off" ? "apaga las luces" : "prende las luces", ctx);
+    return await executeSubuCommand(cleanArg === "lights_off" ? "apaga las luces" : "prende las luces", ctx, true);
   }
   if (tool === "custom_macro") {
     const spec = norm(cleanArg);
@@ -227,7 +227,7 @@ export async function executeNovaTool(
       }
       doneSteps.push("Visual Studio Code en primer plano");
     }
-    if (/\b(?:apagar.*notificacion|sin notificacion|sin interrupcion|no molestar|concentracion)\b/.test(spec)) {
+    if (/\b(?:apagar.*notificaciones?|silenciar.*notificaciones?|sin notificaciones?|sin interrupciones?|no molestar|concentracion)\b/.test(spec)) {
       ctx.startFocus(30);
       ctx.setActiveTab?.("focus");
       await api?.system_action("dnd").catch(() => {});
@@ -243,11 +243,11 @@ export async function executeNovaTool(
     if (doneSteps.length > 0) {
       return { ok: true, reply: `Listo, Hebert. Ejecuté tu rutina: ${doneSteps.join(", ")}.` };
     }
-    // Si la rutina tiene otras instrucciones personalizadas, ejecútala directamente como comando
-    return await executeSubuCommand(cleanArg, ctx);
+    // Si la rutina tiene otras instrucciones personalizadas, ejecútala directamente como comando (sin loop KB)
+    return await executeSubuCommand(cleanArg, ctx, true);
   }
-  // open_app
-  return await executeSubuCommand(`abre ${cleanArg}`, ctx);
+  // open_app (sin loop KB)
+  return await executeSubuCommand(`abre ${cleanArg}`, ctx, true);
 }
 
 export interface SubuContext {
@@ -407,7 +407,8 @@ export async function speakAsSubu(
     // fallback local si no hay red
   }
 
-  if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+  // En Electron nunca caer a speechSynthesis robótico de Windows (mantiene voz 100% consistente)
+  if (getBridge() || typeof window === "undefined" || !("speechSynthesis" in window)) {
     onEnd?.();
     return;
   }
@@ -475,6 +476,7 @@ const WEB_FALLBACKS: Record<string, { label: string; url: string }> = {
 export async function executeSubuCommand(
   rawInput: string,
   ctx: SubuContext,
+  _skipKb = false,
 ): Promise<SubuResult> {
   const api = getBridge();
   const original = rawInput.trim();
@@ -564,10 +566,40 @@ export async function executeSubuCommand(
   q = resolveContextualFollowup(q);
   pushContextTurn("user", q);
 
+  // 0. Base de Conocimiento: enseñanza directa por voz (ANTES de compoundParts y agentQueryMatch para no partir macros con "y")
+  // Ej: "recuerda modo hibernar es poner hibernación la laptop"
+  //     "recuerda que modo análisis es cero música y abre VS Code en primer plano y apagar notificaciones"
+  const teachAliasMatch = q.match(
+    /^(?:recuerda|acordate|aprende|memoriza)\s+(?:que\s+)?(.+?)\s+(?:es|significa|sera|hace|quiere decir)\s+(.+)$/,
+  );
+  if (teachAliasMatch) {
+    const aliasKey = teachAliasMatch[1].trim();
+    const aliasVal = teachAliasMatch[2].trim();
+    const isComplexMacro =
+      aliasVal.split(" ").length >= 3 ||
+      /\b(?:hibern|suspend|musica|notificacion|primer plano|brillo|focus|visual studio|apaga|prende)\b/.test(
+        aliasVal,
+      );
+    if (isComplexMacro) {
+      await teachNovaPattern(aliasKey, "custom_macro", aliasVal);
+      return {
+        ok: true,
+        reply: `¡Memorizado, Hebert! Guardé "${aliasKey}" en mi base de conocimiento. Cuando lo digas, ejecutaré exactamente esa rutina.`,
+      };
+    }
+    cachedKb.aliases[aliasKey] = aliasVal;
+    await getBridge()?.kb_save(cachedKb).catch(() => {});
+    return {
+      ok: true,
+      reply: `¡Aprendido! Ya guardé en mi memoria que "${aliasKey}" es "${aliasVal}".`,
+    };
+  }
+
   // Delegación a Agentes IA instalados — detecta CUALQUIER conjugación ("quiero que busques en copilote qué significa mcp",
   // "busca en copilot...", "ve a claude y escribe...", "pregúntale a copilot...")
+  // Nota: NO incluir "claro" para no chocar con "DiscoClaro" ni muletillas en español
   const agentQueryMatch = q.match(
-    /\b(claude|claud|claro|copilot|copilote|copiloto|copalo|copailot|co pilot|copilo|chatgpt|codex|antigravity|perplexity)\b\s+(?:(?:y\s+)?(?:escribe|escribi|escribas|busca|buscame|busques|pregunta|preguntale|preguntes|consulta|consultes|pon|dile|sobre)\s+)?(.+)$/,
+    /\b(claude|claud|copilot|copilote|copiloto|copalo|copailot|co pilot|copilo|chatgpt|codex|antigravity|perplexity)\b\s+(?:(?:y\s+)?(?:escribe|escribi|escribas|busca|buscame|busques|pregunta|preguntale|preguntes|consulta|consultes|pon|dile|sobre)\s+)?(.+)$/,
   );
   if (agentQueryMatch && agentQueryMatch[2].trim().length >= 3) {
     const rawAgent = agentQueryMatch[1].trim();
@@ -646,7 +678,11 @@ export async function executeSubuCommand(
     /^(?:abre|abrir|abreme|abrime|entra a|entrame a)\s+(?:youtube\s+music|youtube|spotify)\s+y\s+(?:pon|pone|ponme|poneme|reproduce|busca|play)\b/.test(
       q,
     );
-  if (!isOpenYoutubeAndPlay) {
+  const isTaskOrReminder =
+    /^(?:anota|anotame|agrega|agregame|aniade|apunta|apuntame|crea|creame|haz|hazme|guarda|guardame|recuerdame|recordame|avisame)\b/.test(
+      q,
+    );
+  if (!isOpenYoutubeAndPlay && !isTaskOrReminder) {
     const compoundParts = q
       .split(
         /\s+(?:(?:y\s+tambien|y\s+luego|y\s+despues|ademas|luego|despues|y)\s+)?(?=(?:bajame|bajale|subime|subile|mermale|alzale|pon\s+focus|pone\s+focus|inicia\s+focus|anotame|agregame|abrime|cerrame|toma\s+una\s+captura)\b)|\s+(?:y\s+tambien|y\s+luego|y\s+despues|ademas|luego|despues|y)\s+(?=(?:abre|abrir|abreme|cierra|pon|pone|ponme|poneme|reproduce|cambia|cambiame|sube|subi|baja|pausa|siguiente|anterior|toma|bloquea|anota|agrega|inicia|busca|buscame|dime|decime|que\s+hora|que\s+tarea|que\s+clima)\b)/,
@@ -657,41 +693,12 @@ export async function executeSubuCommand(
       const replies: string[] = [];
       let anyOk = false;
       for (const part of compoundParts) {
-        const sub = await executeSubuCommand(part, ctx);
+        const sub = await executeSubuCommand(part, ctx, _skipKb);
         if (sub.ok) anyOk = true;
         if (sub.reply) replies.push(sub.reply);
       }
       return { ok: anyOk, reply: replies.join(" ") };
     }
-  }
-
-  // 0. Base de Conocimiento: enseñanza directa por voz (con o sin "que")
-  // Ej: "recuerda modo hibernar es poner hibernación la laptop"
-  //     "recuerda que modo análisis es cero música, abrir VS Code en primer plano y apagar notificaciones"
-  const teachAliasMatch = q.match(
-    /^(?:recuerda|acordate|aprende|memoriza)\s+(?:que\s+)?(.+?)\s+(?:es|significa|sera|hace|quiere decir)\s+(.+)$/,
-  );
-  if (teachAliasMatch) {
-    const aliasKey = teachAliasMatch[1].trim();
-    const aliasVal = teachAliasMatch[2].trim();
-    const isComplexMacro =
-      aliasVal.split(" ").length >= 3 ||
-      /\b(?:hibern|suspend|musica|notificacion|primer plano|brillo|focus|visual studio|apaga|prende)\b/.test(
-        aliasVal,
-      );
-    if (isComplexMacro) {
-      await teachNovaPattern(aliasKey, "custom_macro", aliasVal);
-      return {
-        ok: true,
-        reply: `¡Memorizado, Hebert! Guardé "${aliasKey}" en mi base de conocimiento. Cuando lo digas, ejecutaré exactamente esa rutina.`,
-      };
-    }
-    cachedKb.aliases[aliasKey] = aliasVal;
-    await getBridge()?.kb_save(cachedKb).catch(() => {});
-    return {
-      ok: true,
-      reply: `¡Aprendido! Ya guardé en mi memoria que "${aliasKey}" es "${aliasVal}".`,
-    };
   }
 
   // 0b. Hibernar laptop directamente ("hiberna la laptop", "modo hibernar", "pon hibernacion")
@@ -700,15 +707,17 @@ export async function executeSubuCommand(
     return { ok: true, reply: "Entendido, Hebert. Hibernando tu laptop ahora." };
   }
 
-  // 0b. Reemplaza alias aprendidos por el usuario dentro de la oración
-  for (const [aliasKey, aliasVal] of Object.entries(cachedKb.aliases)) {
-    if (aliasKey && q.includes(aliasKey)) {
-      q = q.replace(aliasKey, aliasVal);
+  // 0b. Reemplaza alias aprendidos por el usuario dentro de la oración (solo si no es comando de sistema/proyecto)
+  if (!_skipKb) {
+    for (const [aliasKey, aliasVal] of Object.entries(cachedKb.aliases)) {
+      if (aliasKey && aliasKey.length >= 3 && q.includes(aliasKey)) {
+        q = q.replace(aliasKey, aliasVal);
+      }
     }
   }
 
-  // 0c. Consulta patrones aprendidos en nova_kb.json (exacto o similitud >= 0.8)
-  if (cachedKb.patterns.length > 0) {
+  // 0c. Consulta patrones aprendidos en nova_kb.json (exacto o similitud >= 0.8, protegido contra recursión infinita)
+  if (!_skipKb && cachedKb.patterns.length > 0) {
     let bestPat = null;
     let bestScore = 0;
     for (const pat of cachedKb.patterns) {
@@ -988,12 +997,25 @@ export async function executeSubuCommand(
     return { ok: true, reply, keepOpen: true };
   }
 
-  // 2) Recordatorios con alarma hablada ("recuérdame en 15 minutos subir los cambios")
+  // 2) Recordatorios con alarma hablada ("recuérdame en 15 minutos subir los cambios", "recuérdame en un minuto llamar a Juan")
+  const remWordNums: Record<string, number> = {
+    un: 1,
+    una: 1,
+    uno: 1,
+    dos: 2,
+    tres: 3,
+    cuatro: 4,
+    cinco: 5,
+    diez: 10,
+    quince: 15,
+    veinte: 20,
+    treinta: 30,
+  };
   const remMatch = q.match(
-    /^(?:recuerdame|recordame|avisame|pon una alarma|pon un recordatorio)\s+en\s+(\d{1,3})\s+(segundos?|minutos?|horas?)\s*(?:que\s+|de\s+|para\s+)?(.+)$/,
+    /^(?:recuerdame|recordame|avisame|pon una alarma|pon un recordatorio)\s+en\s+(\d{1,3}|un|una|uno|dos|tres|cuatro|cinco|diez|quince|veinte|treinta)\s+(segundos?|minutos?|horas?)\s*(?:que\s+|de\s+|para\s+)?(.+)$/,
   );
   if (remMatch) {
-    const qty = Math.max(1, Number(remMatch[1]));
+    const qty = Math.max(1, Number(remMatch[1]) || remWordNums[remMatch[1]] || 1);
     const unit = remMatch[2];
     const msg = remMatch[3].trim();
     const mult = unit.startsWith("hora") ? 3600_000 : unit.startsWith("min") ? 60_000 : 1000;
@@ -1150,10 +1172,10 @@ export async function executeSubuCommand(
       treinta: 30,
     };
     const relMatch = rawTask.match(
-      /\b(?:en|de|dentro de|para dentro de|para las de)\s+(\d{1,3}|un|una|uno|dos|tres|cuatro|cinco|diez|quince|veinte|treinta)\s+(segundos?|minutos?|horas?)\b/,
+      /\b(?:en|de|dentro de|para dentro de|para las de|las de)\s+(\d{1,3}|un|una|uno|dos|tres|cuatro|cinco|diez|quince|veinte|treinta)\s+(segundos?|minutos?|horas?)\b/,
     );
     const clockMatch = rawTask.match(
-      /\ba\s+las?\s+(\d{1,2})(?::(\d{2})|\s+y\s+(media|cuarto))?(?:\s*(am|pm|de la manana|de la tarde|de la noche|hrs|horas))?\b/,
+      /\b(?:a\s+)?las?\s+(\d{1,2})(?::(\d{2})|\s+y\s+(media|cuarto))?(?:\s*(am|pm|de la manana|de la tarde|de la noche|hrs|horas))?\b/,
     );
 
     if (relMatch) {
@@ -1163,7 +1185,11 @@ export async function executeSubuCommand(
       scheduledMs = qty * mult;
       const targetDate = new Date(Date.now() + scheduledMs);
       timeLabel = targetDate.toLocaleTimeString("es-BO", { hour: "2-digit", minute: "2-digit" });
-      rawTask = rawTask.replace(relMatch[0], "").replace(/^(?:para|de|que|las)\s+/, "").trim();
+      rawTask = rawTask
+        .replace(relMatch[0], "")
+        .replace(/^(?:para|de|que|las?)\b\s*/g, "")
+        .replace(/\s+(?:para|de|las?)$/g, "")
+        .trim();
     } else if (clockMatch) {
       let hr = Number(clockMatch[1]);
       let min = clockMatch[2]
@@ -1190,8 +1216,8 @@ export async function executeSubuCommand(
         timeLabel = `${String(hr).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
         rawTask = rawTask
           .replace(clockMatch[0], "")
-          .replace(/^(?:para|de|que)\s+/, "")
-          .replace(/\s+(?:para|de)$/, "")
+          .replace(/^(?:para|de|que)\b\s*/g, "")
+          .replace(/\s+(?:para|de)$/g, "")
           .trim();
       }
     }
@@ -1319,13 +1345,23 @@ export async function executeSubuCommand(
   );
   if (directPlayMatch) {
     const candidate = directPlayMatch[1].trim();
-    // Si no coincide con una app o focus, reprodúcelo directo en YouTube!
+    const isKnownAppAlias = Object.entries(APP_ALIASES).some(
+      ([canon, aliases]) =>
+        candidate === canon ||
+        aliases.some((a) => candidate === a || new RegExp(`\\b${escapeRegex(a)}\\b`).test(candidate)),
+    );
+    const isInstalledApp = ctx.installedApps.some(
+      (a) => norm(a.name) === candidate || norm(a.processName) === candidate,
+    );
+    // Si no coincide con una app, alias conocido ni focus/brillo/volumen, reprodúcelo directo en YouTube!
     if (
       !candidate.includes("focus") &&
       !candidate.includes("pomodoro") &&
       !candidate.includes("brillo") &&
       !candidate.includes("volumen") &&
-      !WEB_FALLBACKS[candidate]
+      !WEB_FALLBACKS[candidate] &&
+      !isKnownAppAlias &&
+      !isInstalledApp
     ) {
       const res = await api?.play_media_query(candidate, "youtube");
       ctx.setActiveTab?.("music");
@@ -1410,7 +1446,7 @@ export async function executeSubuCommand(
 
   // 8. Consultas rápidas (hora, fecha, clima con ciudad + AccuWeather, batería, disco, RAM)
   const ctxWin = getContextWindow();
-  if (q.includes("hora") || q.includes("horas")) {
+  if (/\b(?:que\s+horas?|que\s+hora|dime\s+la\s+hora|decime\s+la\s+hora|la\s+hora|hora\s+actual)\b/.test(q)) {
     const h = new Date().toLocaleTimeString("es-BO", { hour: "2-digit", minute: "2-digit" });
     const reply = `Son las ${h}.`;
     pushContextTurn("assistant", reply, "time");
@@ -1487,13 +1523,13 @@ export async function executeSubuCommand(
     pushContextTurn("assistant", reply, "weather", liveW.city);
     return { ok: true, reply };
   }
+  const isOpenOrProjectCmd =
+    /^(?:abre|abrir|abreme|abrime|abrile|ejecuta|ejecutame|inicia|iniciame|lanza|entra|entrame|crea|creame|cierra|cerrame)\b/.test(
+      q,
+    );
   if (
-    q.includes("bateria") ||
-    q.includes("estado") ||
-    q.includes("disco") ||
-    q.includes("espacio") ||
-    q.includes("ram") ||
-    q.includes("laptop")
+    !isOpenOrProjectCmd &&
+    /\b(?:bateria|estado|disco|espacio|ram|cpu|laptop)\b/.test(q)
   ) {
     return {
       ok: true,
@@ -1585,6 +1621,13 @@ export async function executeSubuCommand(
         (norm(a.name).includes(canonical) || norm(a.processName).includes(canonical)),
     );
   if (matchedInstalled) {
+    // Si es Visual Studio Code, prioriza traer al frente la ventana ya abierta en lugar de abrir una vacía
+    if (/visual studio code|^code$/i.test(matchedInstalled.name) || /^code$/i.test(matchedInstalled.processName)) {
+      const focused = await api?.focus_app?.("Code").catch(() => ({ ok: false }));
+      if (focused?.ok) {
+        return { ok: true, reply: "¡Claro! Poniendo Visual Studio Code en primer plano." };
+      }
+    }
     await api?.launch(matchedInstalled.lnkPath || matchedInstalled.exePath);
     return { ok: true, reply: `¡Claro! Enseguida abro tu app de ${matchedInstalled.name}.` };
   }
@@ -1608,7 +1651,9 @@ export async function executeSubuCommand(
 
   // 10g. Si empezó con "busca / buscame ..." -> Google
   if (/^(?:busca|buscar|buscame|investiga|investigame|googlea)\s+/.test(q)) {
-    const term = q.replace(/^(?:busca|buscar|buscame|investiga|investigame|googlea)\s+/, "").trim();
+    const term = q
+      .replace(/^(?:busca|buscar|buscame|investiga|investigame|googlea)\s+(?:en\s+google\s+)?/, "")
+      .trim();
     await api?.launch(`https://www.google.com/search?q=${encodeURIComponent(term)}`);
     return { ok: true, reply: `Entendido, buscando "${term}" en Google.` };
   }
