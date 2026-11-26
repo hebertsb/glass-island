@@ -497,39 +497,44 @@ app.whenReady().then(() => {
 
   ipcMain.handle("island:set-brightness", (_e, level) => setBrightnessSmooth(level));
 
-  ipcMain.handle("island:get-clipboard", () => {
+  ipcMain.handle("island:get-clipboard", async () => {
     try {
-      const txt = clipboard.readText();
+      const txt = await clipboard.readText();
       return typeof txt === "string" ? txt.slice(0, 1500) : "";
     } catch {
       return "";
     }
   });
 
-  ipcMain.handle("island:set-clipboard", (_e, text) => {
-    clipboard.writeText(String(text || ""));
-    return true;
+  ipcMain.handle("island:set-clipboard", async (_e, text) => {
+    try {
+      await clipboard.writeText(String(text || ""));
+      return true;
+    } catch {
+      return false;
+    }
   });
 
   const CLIP_CACHE_DIR = path.join(CONFIG_DIR, "clip_cache");
   let lastClipHash = "";
   let lastClipEntry = null;
 
-  ipcMain.handle("island:get-clipboard-rich", () => {
+  ipcMain.handle("island:get-clipboard-rich", async () => {
     try {
-      const formats = clipboard.availableFormats() || [];
-      const hasImageFormat = formats.some((f) => /image/i.test(f));
-      if (hasImageFormat) {
-        const img = clipboard.readImage();
-        if (img && !img.isEmpty()) {
-          const png = img.toPNG();
+      const hasPng = await clipboard.has("image/png").catch(() => false);
+      if (hasPng) {
+        const items = await clipboard.read().catch(() => []);
+        const first = Array.isArray(items) ? items[0] : null;
+        if (first && Array.isArray(first.types) && first.types.includes("image/png")) {
+          const blob = await first.getType("image/png");
+          const png = Buffer.from(await blob.arrayBuffer());
           if (png && png.length > 0) {
             const hash = crypto.createHash("sha1").update(png).digest("hex").slice(0, 12);
             const id = "img:" + hash;
             if (lastClipHash === id && lastClipEntry) {
               return lastClipEntry;
             }
-            // Si coincide con la captura recién guardada por el botón 📸 Captura, conserva esa misma entrada
+            // Si coincide con una captura recién tomada por 📸 Captura, conserva esa entrada
             if (lastClipEntry && lastClipEntry.kind === "image" && lastClipHash.startsWith("img:Nova_")) {
               return lastClipEntry;
             }
@@ -556,6 +561,7 @@ app.whenReady().then(() => {
                 // ignore
               }
             }
+            const img = nativeImage.createFromBuffer(png);
             const sz = img.getSize();
             const thumb = sz.width > 160 ? img.resize({ width: 160, quality: "good" }) : img;
             const thumbUrl = `data:image/jpeg;base64,${thumb.toJPEG(78).toString("base64")}`;
@@ -571,7 +577,8 @@ app.whenReady().then(() => {
           }
         }
       }
-      const txt = (clipboard.readText() || "").trim();
+      const rawTxt = await clipboard.readText().catch(() => "");
+      const txt = typeof rawTxt === "string" ? rawTxt.trim() : "";
       if (txt) {
         const clean = txt.slice(0, 1500);
         const id = "txt:" + crypto.createHash("sha1").update(clean).digest("hex").slice(0, 12);
@@ -585,14 +592,27 @@ app.whenReady().then(() => {
     }
   });
 
-  ipcMain.handle("island:set-clipboard-image", (_e, filePath) => {
+  ipcMain.handle("island:set-clipboard-image", async (_e, filePath) => {
     try {
       const fp = String(filePath || "").trim();
       if (!fp || !fs.existsSync(fp)) return false;
-      const img = nativeImage.createFromPath(fp);
-      if (img.isEmpty()) return false;
-      clipboard.writeImage(img);
-      return true;
+      const safe = fp.replace(/'/g, "''");
+      return await new Promise((resolve) => {
+        execFile(
+          PS_EXE,
+          [
+            "-STA",
+            "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
+            "-Command",
+            `Add-Type -AssemblyName System.Windows.Forms,System.Drawing; $i=[System.Drawing.Image]::FromFile('${safe}'); [System.Windows.Forms.Clipboard]::SetImage($i); $i.Dispose()`,
+          ],
+          { windowsHide: true, timeout: 4000 },
+          (err) => resolve(!err),
+        );
+      });
     } catch {
       return false;
     }
@@ -921,11 +941,12 @@ app.whenReady().then(() => {
               `$g=[System.Drawing.Graphics]::FromImage($bmp); ` +
               `$g.CopyFromScreen($b.Location,[System.Drawing.Point]::Empty,$b.Size); ` +
               `$bmp.Save('${safePath}',[System.Drawing.Imaging.ImageFormat]::Png); ` +
+              `[System.Windows.Forms.Clipboard]::SetImage($bmp); ` +
               `$g.Dispose(); $bmp.Dispose()`;
             execFile(
               PS_EXE,
-              ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", psShot],
-              { windowsHide: true, timeout: 4000 },
+              ["-STA", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", psShot],
+              { windowsHide: true, timeout: 4500 },
               () => resolve(),
             );
           });
@@ -938,13 +959,12 @@ app.whenReady().then(() => {
             }
           }
         }
-        // Copia la imagen directamente al portapapeles de Windows y construye la tarjeta para Clips (Portapapeles)
+        // Construye la tarjeta con miniatura para Clips (Portapapeles) al instante (compatible con Electron 45)
         let clipEntry = null;
         try {
           if (fs.existsSync(filePath)) {
             const shotImg = nativeImage.createFromPath(filePath);
             if (!shotImg.isEmpty()) {
-              clipboard.writeImage(shotImg);
               const sz = shotImg.getSize();
               const thumb = sz.width > 160 ? shotImg.resize({ width: 160, quality: "good" }) : shotImg;
               const thumbUrl = `data:image/jpeg;base64,${thumb.toJPEG(80).toString("base64")}`;
