@@ -62,6 +62,7 @@ import {
   getBridge,
   type AppRuntimeStatus,
   type AppWidget,
+  type ClipEntry,
   type HomeWidgetId,
   type InstalledAppEntry,
   type IslandAnchor,
@@ -581,7 +582,7 @@ export default function App() {
     };
   });
   const [brightness, setBrightness] = useState(80);
-  const [clipHistory, setClipHistory] = useState<string[]>([]);
+  const [clipHistory, setClipHistory] = useState<ClipEntry[]>([]);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
 
   const [manualMood, setManualMood] = useState<RobotMood | null>(null);
@@ -680,17 +681,31 @@ export default function App() {
           }
         })
         .catch(() => {});
-      api
-        .get_clipboard()
-        .then((txt) => {
-          const clean = txt.trim();
-          if (!clean) return;
-          setClipHistory((prev) => {
-            if (prev[0] === clean) return prev;
-            return [clean, ...prev.filter((x) => x !== clean)].slice(0, 12);
-          });
-        })
-        .catch(() => {});
+      if (api.get_clipboard_rich) {
+        api
+          .get_clipboard_rich()
+          .then((entry) => {
+            if (!entry) return;
+            setClipHistory((prev) => {
+              if (prev[0]?.id === entry.id) return prev;
+              return [entry, ...prev.filter((x) => x.id !== entry.id)].slice(0, 15);
+            });
+          })
+          .catch(() => {});
+      } else {
+        api
+          .get_clipboard()
+          .then((txt) => {
+            const clean = txt.trim();
+            if (!clean) return;
+            const entry: ClipEntry = { kind: "text", id: `txt:${clean.slice(0, 64)}`, text: clean };
+            setClipHistory((prev) => {
+              if (prev[0]?.id === entry.id) return prev;
+              return [entry, ...prev.filter((x) => x.id !== entry.id)].slice(0, 15);
+            });
+          })
+          .catch(() => {});
+      }
       const procs = (config.appWidgets ?? []).map((a) => a.processName).filter(Boolean);
       if (procs.length > 0) {
         api.get_app_statuses(procs).then(setAppStatuses).catch(() => {});
@@ -1212,7 +1227,8 @@ export default function App() {
           }
         }, 900);
       } else if (msg.kind === "clip" && msg.text) {
-        setClipHistory((prev) => [msg.text!, ...prev.filter((x) => x !== msg.text)].slice(0, 12));
+        const entry: ClipEntry = { kind: "text", id: `txt:${msg.text.slice(0, 64)}`, text: msg.text };
+        setClipHistory((prev) => [entry, ...prev.filter((x) => x.id !== entry.id)].slice(0, 15));
         playDoneChime(configRef.current.hudSounds !== false);
         setGlassDropToast("📋 Texto copiado al portapapeles desde tu celular");
         window.setTimeout(() => setGlassDropToast(null), 3500);
@@ -2274,7 +2290,11 @@ export default function App() {
                         >
                           <span className="tile-kicker">CLIPS ({clipHistory.length})</span>
                           <div className="tile-sub" style={{ whiteSpace: "normal", display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" }}>
-                            {clipHistory[0] || "Ctrl+C"}
+                            {clipHistory[0]
+                              ? clipHistory[0].kind === "image"
+                                ? `📸 ${clipHistory[0].label}`
+                                : clipHistory[0].text
+                              : "Ctrl+C / Capturas"}
                           </div>
                         </div>
                       );
@@ -2940,7 +2960,17 @@ export default function App() {
                     </div>
                   ) : (
                     config.shelfFiles.map((f) => (
-                      <div key={f.path} className="glass-card-row">
+                      <div
+                        key={f.path}
+                        className="glass-card-row"
+                        draggable
+                        onDragStart={(e) => {
+                          e.preventDefault();
+                          getBridge()?.start_file_drag?.(f.path);
+                        }}
+                        style={{ cursor: "grab" }}
+                        title="Clic para abrir · Arrastra este archivo fuera de la isla hacia cualquier carpeta o app"
+                      >
                         <div style={{ minWidth: 0, cursor: "pointer" }} onClick={() => handleLaunch(f.path)}>
                           <div style={{ fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                             📄 {f.name}
@@ -2977,29 +3007,87 @@ export default function App() {
                   </div>
                   {clipHistory.length === 0 ? (
                     <div className="tile-sub" style={{ padding: "14px 0", textAlign: "center" }}>
-                      Copia cualquier texto (`Ctrl + C`) y aparecerá aquí al instante.
+                      Copia cualquier texto (`Ctrl + C`) o toma una captura y aparecerá aquí al instante para pegar o arrastrar.
                     </div>
                   ) : (
-                    clipHistory.map((item, idx) => (
-                      <div
-                        key={`${idx}-${item.slice(0, 12)}`}
-                        className="glass-card-row"
-                        style={{ cursor: "pointer" }}
-                        onClick={() => {
-                          getBridge()?.set_clipboard(item).catch(() => {});
-                          navigator.clipboard?.writeText(item).catch(() => {});
-                          setCopiedIdx(idx);
-                          window.setTimeout(() => setCopiedIdx(null), 1200);
-                        }}
-                      >
-                        <span style={{ fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {item}
-                        </span>
-                        <span style={{ fontSize: 10, opacity: 0.8, flexShrink: 0 }}>
-                          {copiedIdx === idx ? "✓ Copiado" : "Copiar"}
-                        </span>
-                      </div>
-                    ))
+                    clipHistory.map((item, idx) =>
+                      item.kind === "image" ? (
+                        <div
+                          key={item.id}
+                          className="glass-card-row"
+                          draggable
+                          onDragStart={(e) => {
+                            e.preventDefault();
+                            getBridge()?.start_file_drag?.(item.filePath);
+                          }}
+                          style={{ cursor: "grab", gap: 8, alignItems: "center" }}
+                          title="Clic para copiar (Ctrl+V) · Arrastra este archivo a cualquier app o carpeta"
+                          onClick={() => {
+                            getBridge()?.set_clipboard_image?.(item.filePath).catch(() => {});
+                            setCopiedIdx(idx);
+                            window.setTimeout(() => setCopiedIdx(null), 1400);
+                          }}
+                        >
+                          <img
+                            src={item.thumbUrl}
+                            alt={item.label}
+                            draggable={false}
+                            style={{
+                              width: 44,
+                              height: 30,
+                              objectFit: "cover",
+                              borderRadius: 6,
+                              border: "1px solid rgba(255,255,255,0.22)",
+                              flexShrink: 0,
+                            }}
+                          />
+                          <div style={{ minWidth: 0, flex: 1, display: "flex", flexDirection: "column" }}>
+                            <span style={{ fontSize: 11.5, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              📸 {item.label}
+                            </span>
+                            <span style={{ fontSize: 9.5, opacity: 0.72 }}>
+                              Clic: copiar (Ctrl+V) · Arrastrar archivo ↗
+                            </span>
+                          </div>
+                          <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                            <span className="icon-chip" style={{ fontSize: 10, padding: "3px 7px" }}>
+                              {copiedIdx === idx ? "✓ Copiada" : "Copiar"}
+                            </span>
+                            <button
+                              type="button"
+                              className="icon-chip"
+                              style={{ fontSize: 10, padding: "3px 7px" }}
+                              title="Abrir imagen"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                getBridge()?.launch(item.filePath).catch(() => {});
+                              }}
+                            >
+                              ↗
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div
+                          key={item.id}
+                          className="glass-card-row"
+                          style={{ cursor: "pointer" }}
+                          onClick={() => {
+                            getBridge()?.set_clipboard(item.text).catch(() => {});
+                            navigator.clipboard?.writeText(item.text).catch(() => {});
+                            setCopiedIdx(idx);
+                            window.setTimeout(() => setCopiedIdx(null), 1200);
+                          }}
+                        >
+                          <span style={{ fontSize: 11.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {item.text}
+                          </span>
+                          <span style={{ fontSize: 10, opacity: 0.8, flexShrink: 0 }}>
+                            {copiedIdx === idx ? "✓ Copiado" : "Copiar"}
+                          </span>
+                        </div>
+                      ),
+                    )
                   )}
                 </div>
               )}
@@ -3200,6 +3288,16 @@ export default function App() {
                                   path: res.path,
                                 });
                                 window.setTimeout(() => setShotToast(null), 4200);
+                                getBridge()
+                                  ?.get_clipboard_rich?.()
+                                  .then((entry) => {
+                                    if (!entry) return;
+                                    setClipHistory((prev) => [
+                                      entry,
+                                      ...prev.filter((x) => x.id !== entry.id),
+                                    ].slice(0, 15));
+                                  })
+                                  .catch(() => {});
                               }
                             })
                             .catch(() => {});

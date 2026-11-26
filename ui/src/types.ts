@@ -276,6 +276,10 @@ export const DEFAULT_CONFIG: IslandConfig = {
   focusMinutes: 25,
 };
 
+export type ClipEntry =
+  | { kind: "text"; id: string; text: string }
+  | { kind: "image"; id: string; filePath: string; thumbUrl: string; label: string };
+
 export interface GlassIslandApi {
   set_ignore_mouse: (ignore: boolean) => Promise<boolean>;
   set_position: (
@@ -305,6 +309,9 @@ export interface GlassIslandApi {
   set_brightness: (level: number) => Promise<{ ok: boolean; brightness: number }>;
   get_clipboard: () => Promise<string>;
   set_clipboard: (text: string) => Promise<boolean>;
+  get_clipboard_rich?: () => Promise<ClipEntry | null>;
+  set_clipboard_image?: (filePath: string) => Promise<boolean>;
+  start_file_drag?: (filePath: string) => void;
   launch: (target: string) => Promise<{ ok: boolean; error?: string }>;
   launch_and_paste: (
     target: string,

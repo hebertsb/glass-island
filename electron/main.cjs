@@ -511,6 +511,98 @@ app.whenReady().then(() => {
     return true;
   });
 
+  const CLIP_CACHE_DIR = path.join(CONFIG_DIR, "clip_cache");
+  let lastClipHash = "";
+  let lastClipEntry = null;
+
+  ipcMain.handle("island:get-clipboard-rich", () => {
+    try {
+      const txt = (clipboard.readText() || "").trim();
+      if (txt) {
+        const clean = txt.slice(0, 1500);
+        const id = "txt:" + crypto.createHash("sha1").update(clean).digest("hex").slice(0, 12);
+        lastClipHash = id;
+        lastClipEntry = { kind: "text", id, text: clean };
+        return lastClipEntry;
+      }
+      const img = clipboard.readImage();
+      if (img && !img.isEmpty()) {
+        const png = img.toPNG();
+        if (!png || png.length === 0) return null;
+        const hash = crypto.createHash("sha1").update(png).digest("hex").slice(0, 12);
+        const id = "img:" + hash;
+        if (lastClipHash === id && lastClipEntry) {
+          return lastClipEntry;
+        }
+        fs.mkdirSync(CLIP_CACHE_DIR, { recursive: true });
+        const filePath = path.join(CLIP_CACHE_DIR, `Captura_${hash}.png`);
+        if (!fs.existsSync(filePath)) {
+          fs.writeFileSync(filePath, png);
+          // Mantiene máximo 25 imágenes en caché de portapapeles
+          try {
+            const files = fs
+              .readdirSync(CLIP_CACHE_DIR)
+              .map((n) => ({ p: path.join(CLIP_CACHE_DIR, n), t: fs.statSync(path.join(CLIP_CACHE_DIR, n)).mtimeMs }))
+              .sort((a, b) => b.t - a.t);
+            for (const old of files.slice(25)) {
+              try {
+                fs.unlinkSync(old.p);
+              } catch {
+                // ignore
+              }
+            }
+          } catch {
+            // ignore
+          }
+        }
+        const sz = img.getSize();
+        const thumb = sz.width > 160 ? img.resize({ width: 160, quality: "good" }) : img;
+        const thumbUrl = `data:image/jpeg;base64,${thumb.toJPEG(78).toString("base64")}`;
+        lastClipHash = id;
+        lastClipEntry = {
+          kind: "image",
+          id,
+          filePath,
+          thumbUrl,
+          label: `Captura_${hash.slice(0, 6)}.png · ${sz.width}×${sz.height}`,
+        };
+        return lastClipEntry;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  });
+
+  ipcMain.handle("island:set-clipboard-image", (_e, filePath) => {
+    try {
+      const fp = String(filePath || "").trim();
+      if (!fp || !fs.existsSync(fp)) return false;
+      const img = nativeImage.createFromPath(fp);
+      if (img.isEmpty()) return false;
+      clipboard.writeImage(img);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
+  ipcMain.on("island:start-file-drag", async (event, filePath) => {
+    try {
+      const fp = String(filePath || "").trim();
+      if (!fp || !fs.existsSync(fp)) return;
+      let icon = nativeImage.createFromPath(fp);
+      if (!icon.isEmpty()) {
+        icon = icon.resize({ width: 64, quality: "good" });
+      } else {
+        icon = await app.getFileIcon(fp, { size: "normal" }).catch(() => nativeImage.createEmpty());
+      }
+      event.sender.startDrag({ file: fp, icon });
+    } catch {
+      // ignore
+    }
+  });
+
   ipcMain.handle("island:launch", async (_e, target) => {
     const t = String(target || "").trim();
     if (!t) return { ok: false };
