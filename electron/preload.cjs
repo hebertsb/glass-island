@@ -58,6 +58,7 @@ const api = {
   get_auto_start: () => ipcRenderer.invoke("island:get-auto-start"),
   set_auto_start: (enabled) => ipcRenderer.invoke("island:set-auto-start", enabled),
   quick_control: (action) => ipcRenderer.invoke("island:quick-control", action),
+  focus_app: (processHint) => ipcRenderer.invoke("island:focus-app", processHint),
   is_fullscreen: () => ipcRenderer.invoke("island:is-fullscreen"),
   get_file_path: (file) => {
     try {

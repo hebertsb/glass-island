@@ -375,6 +375,7 @@ export interface GlassIslandApi {
   get_auto_start: () => Promise<{ enabled: boolean }>;
   set_auto_start: (enabled: boolean) => Promise<{ ok: boolean; enabled: boolean }>;
   quick_control: (action: string) => Promise<{ ok: boolean; plan?: string; brightness?: number }>;
+  focus_app: (processHint: string) => Promise<{ ok: boolean }>;
   is_fullscreen: () => Promise<{ fullscreen: boolean }>;
   get_file_path: (file: File) => string;
   glassdrop_start: (files?: ShelfFile[]) => Promise<{ running: boolean; url?: string; ip?: string; port?: number; error?: string }>;

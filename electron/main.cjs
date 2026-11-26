@@ -397,6 +397,37 @@ app.whenReady().then(() => {
     };
   });
 
+  // Trae al frente una ventana existente por nombre de proceso (sin abrir una ventana vacía nueva)
+  ipcMain.handle("island:focus-app", async (_e, processHint) => {
+    const hint = String(processHint || "").replace(/[^a-z0-9._ -]/gi, "").trim();
+    if (!hint) return { ok: false };
+    return new Promise((resolve) => {
+      const ps = `
+        Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class GIFocus { [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr h, int c); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h); }'
+        $p = Get-Process -Name "${hint}" -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Sort-Object StartTime -Descending | Select-Object -First 1
+        if ($null -eq $p) {
+          $p = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and ($_.ProcessName -like "*${hint}*" -or $_.MainWindowTitle -like "*${hint}*") } | Select-Object -First 1
+        }
+        if ($null -ne $p) {
+          $h = $p.MainWindowHandle
+          if ([GIFocus]::IsIconic($h)) { [GIFocus]::ShowWindowAsync($h, 9) | Out-Null }
+          [GIFocus]::SetForegroundWindow($h) | Out-Null
+          Write-Output "FOCUSED"
+        } else {
+          Write-Output "NONE"
+        }
+      `;
+      execFile(
+        PS_EXE,
+        ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", ps],
+        { windowsHide: true, timeout: 4000 },
+        (_err, stdout) => {
+          resolve({ ok: String(stdout || "").includes("FOCUSED") });
+        },
+      );
+    });
+  });
+
   ipcMain.handle("island:is-fullscreen", async () => {
     const res = await callBridge({ cmd: "fullscreen" }, 1500);
     return { fullscreen: Boolean(res?.fullscreen) };

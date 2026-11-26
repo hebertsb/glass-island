@@ -217,10 +217,14 @@ export async function executeNovaTool(
       doneSteps.push("música silenciada");
     }
     if (/\b(?:visual studio code|vs code|vscode|proyecto activo|primer plano)\b/.test(spec)) {
-      let appsList = ctx.installedApps;
-      if (appsList.length === 0) appsList = (await api?.list_installed_apps().catch(() => [])) || [];
-      const vsApp = appsList.find((a) => /visual studio code|^code$/i.test(a.name) || /^code$/i.test(a.processName));
-      if (vsApp) await api?.launch(vsApp.lnkPath || vsApp.exePath);
+      // Primero intenta traer al frente tu ventana YA ABIERTA de VS Code (sin abrir una vacía)
+      const focused = await api?.focus_app?.("Code").catch(() => ({ ok: false }));
+      if (!focused?.ok) {
+        let appsList = ctx.installedApps;
+        if (appsList.length === 0) appsList = (await api?.list_installed_apps().catch(() => [])) || [];
+        const vsApp = appsList.find((a) => /visual studio code|^code$/i.test(a.name) || /^code$/i.test(a.processName));
+        if (vsApp) await api?.launch(vsApp.lnkPath || vsApp.exePath);
+      }
       doneSteps.push("Visual Studio Code en primer plano");
     }
     if (/\b(?:apagar.*notificacion|sin notificacion|sin interrupcion|no molestar|concentracion)\b/.test(spec)) {
@@ -835,12 +839,15 @@ export async function executeSubuCommand(
     ctx.startFocus(25);
     ctx.setActiveTab?.("focus");
     await api?.play_media_query(song, "youtube");
-    // Abre Visual Studio Code automáticamente junto con la música y Focus
-    let appsList = ctx.installedApps;
-    if (appsList.length === 0) appsList = (await api?.list_installed_apps().catch(() => [])) || [];
-    const vsApp = appsList.find((a) => /visual studio code|^code$/i.test(a.name) || /^code$/i.test(a.processName));
-    if (vsApp) {
-      await api?.launch(vsApp.lnkPath || vsApp.exePath);
+    // Trae al frente tu ventana existente de VS Code (o la abre si no estaba abierta)
+    const focusedVs = await api?.focus_app?.("Code").catch(() => ({ ok: false }));
+    if (!focusedVs?.ok) {
+      let appsList = ctx.installedApps;
+      if (appsList.length === 0) appsList = (await api?.list_installed_apps().catch(() => [])) || [];
+      const vsApp = appsList.find((a) => /visual studio code|^code$/i.test(a.name) || /^code$/i.test(a.processName));
+      if (vsApp) {
+        await api?.launch(vsApp.lnkPath || vsApp.exePath);
+      }
     }
     const reply = `Activando modo programación: abriendo Visual Studio Code, poniendo ${song}, brillo al 75% y Focus de 25 minutos.`;
     pushContextTurn("assistant", reply, "focus");
