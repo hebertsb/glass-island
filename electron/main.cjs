@@ -518,11 +518,32 @@ app.whenReady().then(() => {
   const CLIP_CACHE_DIR = path.join(CONFIG_DIR, "clip_cache");
   let lastClipHash = "";
   let lastClipEntry = null;
+  let lastShotAt = 0;
+
+  ipcMain.handle("island:get-displays", () => {
+    try {
+      const primaryId = screen.getPrimaryDisplay().id;
+      return screen.getAllDisplays().map((d, idx) => ({
+        id: d.id,
+        index: idx,
+        primary: d.id === primaryId,
+        width: d.bounds.width,
+        height: d.bounds.height,
+        label: d.id === primaryId ? `P${idx + 1} (Principal)` : `P${idx + 1} (Secundaria)`,
+      }));
+    } catch {
+      return [{ id: 0, index: 0, primary: true, width: 1920, height: 1080, label: "P1 (Principal)" }];
+    }
+  });
 
   ipcMain.handle("island:get-clipboard-rich", async () => {
     try {
       const hasPng = await clipboard.has("image/png").catch(() => false);
       if (hasPng) {
+        // Si acabamos de tomar una captura con 📸 Captura hace <8s, devuelve esa misma entrada sin duplicar
+        if (lastClipEntry && lastClipEntry.kind === "image" && Date.now() - lastShotAt < 8000) {
+          return lastClipEntry;
+        }
         const items = await clipboard.read().catch(() => []);
         const first = Array.isArray(items) ? items[0] : null;
         if (first && Array.isArray(first.types) && first.types.includes("image/png")) {
@@ -534,7 +555,6 @@ app.whenReady().then(() => {
             if (lastClipHash === id && lastClipEntry) {
               return lastClipEntry;
             }
-            // Si coincide con una captura recién tomada por 📸 Captura, conserva esa entrada
             if (lastClipEntry && lastClipEntry.kind === "image" && lastClipHash.startsWith("img:Nova_")) {
               return lastClipEntry;
             }
@@ -918,10 +938,12 @@ app.whenReady().then(() => {
         await shell.openPath(uni);
         return { ok: true, message: "Abriendo tu carpeta de Universidad." };
       }
-      if (act === "screenshot") {
+      if (act === "screenshot" || act.startsWith("screenshot:")) {
+        const mode = act.includes(":") ? act.split(":")[1] : "primary";
         const shotsDir = path.join(os.homedir(), "Pictures", "Screenshots");
         fs.mkdirSync(shotsDir, { recursive: true });
-        const filePath = path.join(shotsDir, `Nova_${Date.now()}.png`);
+        const suffix = mode === "all" ? "_Todas" : mode === "secondary" ? "_P2" : "";
+        const filePath = path.join(shotsDir, `Nova${suffix}_${Date.now()}.png`);
         const safePath = filePath.replace(/'/g, "''");
         // Oculta brevemente la isla para que la captura salga limpia sin el panel encima
         if (win && !win.isDestroyed()) {
@@ -934,9 +956,15 @@ app.whenReady().then(() => {
         }
         try {
           await new Promise((resolve) => {
+            const boundsExpr =
+              mode === "all"
+                ? `$b=[System.Windows.Forms.SystemInformation]::VirtualScreen`
+                : mode === "secondary"
+                  ? `$sec=([System.Windows.Forms.Screen]::AllScreens | Where-Object { -not $_.Primary } | Select-Object -First 1); $b=if($sec){$sec.Bounds}else{[System.Windows.Forms.Screen]::PrimaryScreen.Bounds}`
+                  : `$b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds`;
             const psShot =
               `Add-Type -AssemblyName System.Windows.Forms,System.Drawing; ` +
-              `$b=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds; ` +
+              `${boundsExpr}; ` +
               `$bmp=New-Object System.Drawing.Bitmap($b.Width,$b.Height); ` +
               `$g=[System.Drawing.Graphics]::FromImage($bmp); ` +
               `$g.CopyFromScreen($b.Location,[System.Drawing.Point]::Empty,$b.Size); ` +
@@ -969,6 +997,7 @@ app.whenReady().then(() => {
               const thumb = sz.width > 160 ? shotImg.resize({ width: 160, quality: "good" }) : shotImg;
               const thumbUrl = `data:image/jpeg;base64,${thumb.toJPEG(80).toString("base64")}`;
               const id = `img:${path.basename(filePath)}`;
+              lastShotAt = Date.now();
               lastClipHash = id;
               lastClipEntry = {
                 kind: "image",

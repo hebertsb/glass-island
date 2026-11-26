@@ -561,6 +561,8 @@ export default function App() {
   const [ramHistory, setRamHistory] = useState<number[]>([48, 50, 51, 52, 51, 52]);
   const [shelfDragOver, setShelfDragOver] = useState(false);
   const [powerPlan, setPowerPlan] = useState<"power_saver" | "power_balanced" | "power_high">("power_balanced");
+  const [shotScreen, setShotScreen] = useState<"primary" | "secondary" | "all">("primary");
+  const [displayCount, setDisplayCount] = useState(1);
   const [inFullscreen, setInFullscreen] = useState(false);
   const [glassDropUrl, setGlassDropUrl] = useState<string | null>(null);
   const [glassDropToast, setGlassDropToast] = useState<string | null>(null);
@@ -1268,6 +1270,12 @@ export default function App() {
         ?.get_brightness()
         .then((realB) => {
           if (typeof realB === "number" && realB >= 5) setBrightness(realB);
+        })
+        .catch(() => {});
+      getBridge()
+        ?.get_displays?.()
+        .then((ds) => {
+          if (Array.isArray(ds)) setDisplayCount(ds.length);
         })
         .catch(() => {});
     }
@@ -3270,35 +3278,66 @@ export default function App() {
                       >
                         🌙 Luz noct.
                       </button>
-                      <button
-                        type="button"
-                        className="cc-tile"
-                        onClick={() => {
-                          getBridge()
-                            ?.system_action("screenshot")
-                            .then((res) => {
-                              if (res?.ok) {
-                                playDoneChime(config.hudSounds !== false);
-                                triggerBurst("happy", 1400);
-                                setGreenGlow(true);
-                                window.setTimeout(() => setGreenGlow(false), 1400);
-                                if (res.clipEntry) {
-                                  const entry = res.clipEntry;
-                                  setClipHistory((prev) => [
-                                    entry,
-                                    ...prev.filter((x) => x.id !== entry.id),
-                                  ].slice(0, 15));
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <button
+                          type="button"
+                          className="cc-tile"
+                          style={{ flex: 1 }}
+                          onClick={() => {
+                            const action =
+                              shotScreen === "all"
+                                ? "screenshot:all"
+                                : shotScreen === "secondary"
+                                  ? "screenshot:secondary"
+                                  : "screenshot:primary";
+                            getBridge()
+                              ?.system_action(action)
+                              .then((res) => {
+                                if (res?.ok) {
+                                  playDoneChime(config.hudSounds !== false);
+                                  triggerBurst("happy", 1400);
+                                  setGreenGlow(true);
+                                  window.setTimeout(() => setGreenGlow(false), 1400);
+                                  if (res.clipEntry) {
+                                    const entry = res.clipEntry;
+                                    setClipHistory((prev) => [
+                                      entry,
+                                      ...prev.filter((x) => x.id !== entry.id),
+                                    ].slice(0, 15));
+                                  }
+                                  setActiveTab("clipboard");
                                 }
-                                // Lleva directo a Portapapeles (Clips) para ver, copiar (Ctrl+V) o arrastrar la captura
-                                setActiveTab("clipboard");
-                              }
-                            })
-                            .catch(() => {});
-                        }}
-                        title="Tomar captura limpia y mostrarla al instante en Portapapeles (Clips) para pegar o arrastrar"
-                      >
-                        📸 Captura
-                      </button>
+                              })
+                              .catch(() => {});
+                          }}
+                          title="Tomar captura limpia y mostrarla al instante en Portapapeles (Clips) para pegar o arrastrar"
+                        >
+                          📸 Captura
+                        </button>
+                        {displayCount > 1 && (
+                          <button
+                            type="button"
+                            className="cc-tile"
+                            style={{ padding: "0 8px", flex: "0 0 auto", fontSize: 10.5 }}
+                            onClick={() =>
+                              setShotScreen((prev) =>
+                                prev === "primary"
+                                  ? "secondary"
+                                  : prev === "secondary"
+                                    ? "all"
+                                    : "primary",
+                              )
+                            }
+                            title="Cambiar pantalla a capturar: P1 (Principal), P2 (Secundaria) o Todas"
+                          >
+                            {shotScreen === "primary"
+                              ? "🖥️ P1"
+                              : shotScreen === "secondary"
+                                ? "🖥️ P2"
+                                : "🖥️ Todas"}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
 

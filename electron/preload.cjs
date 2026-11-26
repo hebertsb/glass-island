@@ -24,6 +24,7 @@ const api = {
   get_clipboard_rich: () => ipcRenderer.invoke("island:get-clipboard-rich"),
   set_clipboard_image: (filePath) => ipcRenderer.invoke("island:set-clipboard-image", filePath),
   start_file_drag: (filePath) => ipcRenderer.send("island:start-file-drag", filePath),
+  get_displays: () => ipcRenderer.invoke("island:get-displays"),
   launch: (target) => ipcRenderer.invoke("island:launch", target),
   launch_and_paste: (target, promptText, appLabel) =>
     ipcRenderer.invoke("island:launch-and-paste", target, promptText, appLabel),

@@ -312,6 +312,7 @@ export interface GlassIslandApi {
   get_clipboard_rich?: () => Promise<ClipEntry | null>;
   set_clipboard_image?: (filePath: string) => Promise<boolean>;
   start_file_drag?: (filePath: string) => void;
+  get_displays?: () => Promise<{ id: number; index: number; primary: boolean; width: number; height: number; label: string }[]>;
   launch: (target: string) => Promise<{ ok: boolean; error?: string }>;
   launch_and_paste: (
     target: string,

@@ -1095,9 +1095,21 @@ export async function executeSubuCommand(
   }
 
   if (q.includes("captura") || q.includes("screenshot") || q.includes("pantallazo")) {
-    const res = await api?.system_action("screenshot");
+    const mode =
+      /\b(todas|ambas|dos pantallas)\b/.test(q)
+        ? "screenshot:all"
+        : /\b(segunda|secundaria|pantalla 2|monitor 2)\b/.test(q)
+          ? "screenshot:secondary"
+          : "screenshot:primary";
+    const res = await api?.system_action(mode);
+    const label =
+      mode === "screenshot:all"
+        ? "de todas tus pantallas"
+        : mode === "screenshot:secondary"
+          ? "de tu pantalla secundaria"
+          : "de tu pantalla principal";
     return res?.ok
-      ? { ok: true, reply: "Listo, captura de pantalla guardada en tus Imágenes." }
+      ? { ok: true, reply: `Listo, captura ${label} guardada y copiada en Clips.` }
       : { ok: false, reply: "No pude tomar la captura en este momento." };
   }
   if (q.includes("bloquea la pantalla") || q.includes("bloquear pantalla") || q.includes("bloquea la laptop") || q.includes("bloquea el pc")) {
