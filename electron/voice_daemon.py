@@ -177,15 +177,16 @@ def _prepare_tts_text(text: str, voice: str) -> str:
     return out
 
 
-# Prosodia 100% natural (+0% velocidad y +0Hz tono) para evitar recortes bruscos o voz metálica
+# Prosodia natural sin acelerar (+0% velocidad para no cortar palabras) y timbre sereno estilo J.A.R.V.I.S.
 _VOICE_PROSODY: dict[str, tuple[str, str]] = {
     "en-US-BrianMultilingualNeural": ("+0%", "-2Hz"),
     "en-US-AndrewMultilingualNeural": ("+0%", "+0Hz"),
     "en-US-EmmaMultilingualNeural": ("+0%", "+0Hz"),
     "en-US-AvaMultilingualNeural": ("+0%", "+0Hz"),
+    "es-ES-AlvaroNeural": ("+0%", "-2Hz"),
+    "es-MX-JorgeNeural": ("+0%", "-2Hz"),
     "es-AR-TomasNeural": ("+0%", "+0Hz"),
     "es-CO-GonzaloNeural": ("+0%", "+0Hz"),
-    "es-MX-JorgeNeural": ("+0%", "+0Hz"),
     "es-BO-MarceloNeural": ("+0%", "+0Hz"),
     "es-BO-SofiaNeural": ("+0%", "+0Hz"),
 }

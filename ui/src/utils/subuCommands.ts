@@ -327,11 +327,12 @@ export const VOICE_PROFILES = [
   { id: "en-US-AndrewMultilingualNeural", label: "✨ Andrew HD · KAI Natural (Gratis)" },
   { id: "en-US-EmmaMultilingualNeural", label: "✨ Emma HD · AVA Cálida (Gratis)" },
   { id: "en-US-AvaMultilingualNeural", label: "✨ Ava HD · Bilingüe ES/EN (Gratis)" },
-  { id: "es-CO-GonzaloNeural", label: "🎩 Gonzalo · Jarvis Latino Fluido (Gratis, Sin Límite)" },
-  { id: "es-AR-TomasNeural", label: "🎩 Tomás · Jarvis Natural (Gratis, Sin Límite)" },
+  { id: "es-MX-JorgeNeural", label: "🎩 Jorge · J.A.R.V.I.S. Latino Grave (Gratis, Sin Límite)" },
+  { id: "es-ES-AlvaroNeural", label: "🎩 Álvaro · J.A.R.V.I.S. Clásico Iron Man (Gratis, Sin Límite)" },
+  { id: "es-CO-GonzaloNeural", label: "Gonzalo · Colombia Fluido (Gratis, Sin Límite)" },
+  { id: "es-AR-TomasNeural", label: "Tomás · Argentina Natural (Gratis, Sin Límite)" },
   { id: "es-BO-SofiaNeural", label: "Sofía · Bolivia (Gratis, Sin Límite)" },
   { id: "es-BO-MarceloNeural", label: "Marcelo · Bolivia (Gratis, Sin Límite)" },
-  { id: "es-MX-JorgeNeural", label: "Jorge · México (Gratis, Sin Límite)" },
   { id: "es-MX-DaliaNeural", label: "Dalia · México (Gratis, Sin Límite)" },
 ] as const;
 

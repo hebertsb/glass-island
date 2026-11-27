@@ -2450,13 +2450,13 @@ app.whenReady().then(() => {
         }
       }
       return await callVoice(
-        { cmd: "speak", text: cleanText, voice: "es-CO-GonzaloNeural" },
+        { cmd: "speak", text: cleanText, voice: "es-MX-JorgeNeural" },
         12000,
       );
     }
 
     // 3) Gemini 2.5 Flash Pro TTS con Circuit-Breaker instantáneo ante cuota agotada (429)
-    // Si la cuota gratuita diaria de Gemini (15 req/día) se agotó, pasa en 0 ms a la voz neural fluida sin demoras ni cortes
+    // Si la cuota gratuita diaria de Gemini (15 req/día) se agotó, pasa en 0 ms a la voz Jarvis grave sin demoras ni cortes
     if (requestedVoice.startsWith("gemini:")) {
       const gVoice = requestedVoice.slice("gemini:".length).trim() || "Charon";
       const key = resolveGeminiKey(geminiApiKey);
@@ -2482,9 +2482,9 @@ app.whenReady().then(() => {
           return { audio: result.dataUrl, voice: requestedVoice, engine: "gemini-tts" };
         }
       }
-      // Respaldo instantáneo (250 ms) con fonética fluida y prosodia natural 100% en español latino
+      // Respaldo instantáneo (250 ms) con timbre grave estilo J.A.R.V.I.S. en español latino puro
       const isMale = /charon|fenrir|puck|orus/i.test(gVoice);
-      const fallbackVoice = isMale ? "es-CO-GonzaloNeural" : "es-BO-SofiaNeural";
+      const fallbackVoice = isMale ? "es-MX-JorgeNeural" : "es-BO-SofiaNeural";
       return await callVoice({ cmd: "speak", text: cleanText, voice: fallbackVoice }, 12000);
     }
 
