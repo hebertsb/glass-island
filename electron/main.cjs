@@ -759,6 +759,243 @@ app.whenReady().then(() => {
     });
   });
 
+  // Intercambia en 1 paso las ventanas visibles principales de Pantalla 1 y Pantalla 2 (Swap P1 <-> P2)
+  ipcMain.handle("island:swap-monitors", async () => {
+    if (screen.getAllDisplays().length < 2) {
+      return { ok: false, reason: "single_display" };
+    }
+    if (win && !win.isDestroyed()) {
+      try {
+        win.blur();
+      } catch {
+        // ignore
+      }
+    }
+    return await new Promise((resolve) => {
+      const ps = `
+        Add-Type -AssemblyName System.Windows.Forms
+        Add-Type -TypeDefinition '
+          using System;
+          using System.Runtime.InteropServices;
+          public class GISwap {
+            [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+            [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+            [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr h);
+            [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);
+            [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int X, int Y, int W, int H, bool repaint);
+            [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+            [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr h);
+            [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr hAfter, int X, int Y, int cx, int cy, uint flags);
+            public static void BringFront(IntPtr h) {
+              SetWindowPos(h, new IntPtr(-1), 0, 0, 0, 0, 0x0043);
+              SetWindowPos(h, new IntPtr(-2), 0, 0, 0, 0, 0x0043);
+              BringWindowToTop(h);
+              SetForegroundWindow(h);
+            }
+          }
+        '
+        $s1 = [System.Windows.Forms.Screen]::PrimaryScreen
+        $s2 = [System.Windows.Forms.Screen]::AllScreens | Where-Object { -not $_.Primary } | Select-Object -First 1
+        if ($null -eq $s2) { Write-Output "SINGLE"; exit }
+        $w1 = $null; $w2 = $null
+        $procs = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle -ne '' -and $_.ProcessName -ne 'electron' }
+        foreach ($p in $procs) {
+          $h = $p.MainWindowHandle
+          if ([GISwap]::IsIconic($h)) { continue }
+          $r = New-Object GISwap+RECT
+          if (-not [GISwap]::GetWindowRect($h, [ref]$r)) { continue }
+          $cx = [int](($r.Left + $r.Right) / 2); $cy = [int](($r.Top + $r.Bottom) / 2)
+          if ($s1.Bounds.Contains($cx, $cy) -and $null -eq $w1) { $w1 = $p }
+          elseif ($s2.Bounds.Contains($cx, $cy) -and $null -eq $w2) { $w2 = $p }
+          if ($w1 -and $w2) { break }
+        }
+        $wa1 = $s1.WorkingArea; $wa2 = $s2.WorkingArea
+        if ($w1) {
+          [GISwap]::ShowWindow($w1.MainWindowHandle, 9) | Out-Null
+          Start-Sleep -Milliseconds 50
+          [GISwap]::MoveWindow($w1.MainWindowHandle, [int]$wa2.X, [int]$wa2.Y, [int]$wa2.Width, [int]$wa2.Height, $true) | Out-Null
+        }
+        if ($w2) {
+          [GISwap]::ShowWindow($w2.MainWindowHandle, 9) | Out-Null
+          Start-Sleep -Milliseconds 50
+          [GISwap]::MoveWindow($w2.MainWindowHandle, [int]$wa1.X, [int]$wa1.Y, [int]$wa1.Width, [int]$wa1.Height, $true) | Out-Null
+        }
+        Start-Sleep -Milliseconds 120
+        if ($w1) { [GISwap]::ShowWindow($w1.MainWindowHandle, 3) | Out-Null; [GISwap]::BringFront($w1.MainWindowHandle) }
+        if ($w2) { [GISwap]::ShowWindow($w2.MainWindowHandle, 3) | Out-Null; [GISwap]::BringFront($w2.MainWindowHandle) }
+        if ($w1 -or $w2) {
+          $n1 = if ($w1) { $w1.ProcessName } else { '' }
+          $n2 = if ($w2) { $w2.ProcessName } else { '' }
+          Write-Output "SWAPPED|$n1|$n2"
+        } else {
+          Write-Output "NONE"
+        }
+      `;
+      execFile(
+        PS_EXE,
+        ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", ps],
+        { windowsHide: true, timeout: 5500 },
+        (_err, stdout) => {
+          const out = String(stdout || "").trim();
+          if (out.startsWith("SWAPPED|")) {
+            const parts = out.split("|");
+            resolve({ ok: true, p1: parts[1] || "", p2: parts[2] || "" });
+          } else {
+            resolve({ ok: false });
+          }
+        },
+      );
+    });
+  });
+
+  // Divide pantalla (Izquierda 50% o Derecha 50%) en Pantalla 1 o Pantalla 2
+  ipcMain.handle("island:snap-window", async (_e, appHint, side = "left", targetDisplay = "primary") => {
+    const hint = String(appHint || "").replace(/[^a-zA-Z0-9 ._-]/g, "").trim();
+    const isRight = String(side || "").toLowerCase() === "right";
+    const wantSecondary = String(targetDisplay || "").toLowerCase() === "secondary";
+    if (win && !win.isDestroyed()) {
+      try {
+        win.blur();
+      } catch {
+        // ignore
+      }
+    }
+    return await new Promise((resolve) => {
+      const ps = `
+        Add-Type -AssemblyName System.Windows.Forms
+        Add-Type -TypeDefinition '
+          using System;
+          using System.Runtime.InteropServices;
+          public class GISnap {
+            [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);
+            [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int X, int Y, int W, int H, bool repaint);
+            [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+            [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr h);
+            [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr hAfter, int X, int Y, int cx, int cy, uint flags);
+            public static void BringFront(IntPtr h) {
+              SetWindowPos(h, new IntPtr(-1), 0, 0, 0, 0, 0x0043);
+              SetWindowPos(h, new IntPtr(-2), 0, 0, 0, 0, 0x0043);
+              BringWindowToTop(h);
+              SetForegroundWindow(h);
+            }
+          }
+        '
+        $s = if ($${wantSecondary ? "true" : "false"}) {
+          $sec = [System.Windows.Forms.Screen]::AllScreens | Where-Object { -not $_.Primary } | Select-Object -First 1
+          if ($sec) { $sec } else { [System.Windows.Forms.Screen]::PrimaryScreen }
+        } else {
+          [System.Windows.Forms.Screen]::PrimaryScreen
+        }
+        $wa = $s.WorkingArea
+        $halfW = [int]([Math]::Floor($wa.Width / 2))
+        $bx = if ($${isRight ? "true" : "false"}) { [int]($wa.X + $halfW) } else { [int]$wa.X }
+        $by = [int]$wa.Y
+        $bw = $halfW
+        $bh = [int]$wa.Height
+        $hint = '${hint}'
+        if ($hint -ne '') {
+          $p = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and $_.ProcessName -ne 'electron' -and ($_.ProcessName -like "*$hint*" -or $_.MainWindowTitle -like "*$hint*") } | Sort-Object { if($_.MainWindowTitle -ne ''){0}else{1} } | Select-Object -First 1
+        } else {
+          $p = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle -ne '' -and $_.ProcessName -ne 'electron' } | Select-Object -First 1
+        }
+        if ($null -ne $p) {
+          $h = $p.MainWindowHandle
+          [GISnap]::ShowWindow($h, 9) | Out-Null
+          Start-Sleep -Milliseconds 60
+          [GISnap]::MoveWindow($h, $bx, $by, $bw, $bh, $true) | Out-Null
+          [GISnap]::BringFront($h)
+          Write-Output ("SNAPPED|" + $p.MainWindowTitle)
+        } else {
+          Write-Output "NONE"
+        }
+      `;
+      execFile(
+        PS_EXE,
+        ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", ps],
+        { windowsHide: true, timeout: 4500 },
+        (_err, stdout) => {
+          const out = String(stdout || "").trim();
+          if (out.startsWith("SNAPPED|")) {
+            resolve({ ok: true, title: out.slice(8), side: isRight ? "derecha" : "izquierda" });
+          } else {
+            resolve({ ok: false });
+          }
+        },
+      );
+    });
+  });
+
+  // Mueve la propia ventana GlassIsland al borde superior central de Pantalla 1 o Pantalla 2
+  ipcMain.handle("island:move-island-display", (_e, targetDisplay = "toggle") => {
+    if (!win || win.isDestroyed()) return { ok: false };
+    const displays = screen.getAllDisplays();
+    const primary = screen.getPrimaryDisplay();
+    const secondary = displays.find((d) => d.id !== primary.id);
+    if (!secondary) return { ok: false, display: "primary" };
+    const [cx, cy] = win.getPosition();
+    const [w] = win.getSize();
+    const current = screen.getDisplayNearestPoint({ x: cx + Math.round(w / 2), y: cy + 20 });
+    let dest = primary;
+    if (targetDisplay === "secondary") dest = secondary;
+    else if (targetDisplay === "primary") dest = primary;
+    else dest = current.id === primary.id ? secondary : primary;
+
+    const nx = Math.round(dest.bounds.x + (dest.bounds.width - w) / 2);
+    const ny = dest.bounds.y;
+    win.setPosition(nx, ny);
+    return { ok: true, display: dest.id === primary.id ? "pantalla principal" : "pantalla secundaria" };
+  });
+
+  // Reproduce directamente una playlist real (YouTube, YouTube Music o Spotify) sin búsquedas intermedias
+  ipcMain.handle("island:play-playlist", async (_e, rawUrl, rawPlatform) => {
+    const url = String(rawUrl || "").trim();
+    if (!url || !/^(https?|spotify):/i.test(url)) return { ok: false };
+    const plat =
+      String(rawPlatform || "").toLowerCase() ||
+      (url.includes("spotify")
+        ? "spotify"
+        : url.includes("music.youtube")
+          ? "youtube music"
+          : "youtube");
+    const installedApp = findInstalledMediaApp(plat);
+    try {
+      if (plat === "spotify") {
+        const spMatch = url.match(/open\.spotify\.com\/(playlist|album|track|artist)\/([a-zA-Z0-9]+)/i);
+        if (installedApp && spMatch) {
+          await shell.openExternal(`spotify:${spMatch[1]}:${spMatch[2]}`);
+          return { ok: true, usedApp: true, platform: "Spotify" };
+        }
+        await shell.openExternal(url);
+        return { ok: true, usedApp: Boolean(installedApp && url.startsWith("spotify:")), platform: "Spotify" };
+      }
+
+      if (installedApp && installedApp.kind === "pwa") {
+        await new Promise((resolve) => {
+          const titleSuffix = plat === "youtube music" ? "YouTube Music" : "YouTube";
+          const psClose =
+            `Get-Process -Name chrome,msedge -ErrorAction SilentlyContinue | ` +
+            `Where-Object { $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle -match ' - ${titleSuffix}$' } | ` +
+            `ForEach-Object { $_.CloseMainWindow() | Out-Null }`;
+          execFile(
+            PS_EXE,
+            ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", psClose],
+            { windowsHide: true, timeout: 1500 },
+            () => resolve(),
+          );
+        });
+        const launchArgs = [];
+        if (installedApp.profileDir) launchArgs.push(`--profile-directory=${installedApp.profileDir}`);
+        launchArgs.push(`--app=${url}`);
+        spawn(installedApp.browserExe, launchArgs, { detached: true, stdio: "ignore" }).unref();
+        return { ok: true, usedApp: true, platform: plat === "youtube music" ? "YouTube Music" : "YouTube" };
+      }
+      await shell.openExternal(url);
+      return { ok: true, usedApp: false, platform: plat === "youtube music" ? "YouTube Music" : "YouTube" };
+    } catch {
+      return { ok: false };
+    }
+  });
+
   // Cierra la ventana activa (excluyendo GlassIsland) para "cierra esta ventana" / "cierra esto"
   ipcMain.handle("island:close-active-window", async () => {
     return await new Promise((resolve) => {

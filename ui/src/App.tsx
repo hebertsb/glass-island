@@ -73,6 +73,7 @@ import {
   type IslandShape,
   type ModuleId,
   type NowPlayingData,
+  type PlaylistItem,
   type RobotMood,
   type ShortcutItem,
   type TelemetryData,
@@ -603,6 +604,8 @@ export default function App() {
   const [newEmoji, setNewEmoji] = useState("⚡");
   const [newColor, setNewColor] = useState("#3b82f6");
   const [newTodoText, setNewTodoText] = useState("");
+  const [newPlName, setNewPlName] = useState("");
+  const [newPlUrl, setNewPlUrl] = useState("");
 
   const dragRef = useRef<{ active: boolean; lastX: number; lastY: number }>({
     active: false,
@@ -1080,6 +1083,24 @@ export default function App() {
       },
       codingMusic: config.codingMusic || "Avicii Levels",
       setCodingMusic: (song) => setConfig((p) => ({ ...p, codingMusic: song })),
+      playlists: config.playlists ?? [],
+      codingPlaylistId: config.codingPlaylistId || "",
+      relaxPlaylistId: config.relaxPlaylistId || "",
+      homePlaylistId: config.homePlaylistId || "",
+      addPlaylist: (item) =>
+        setConfig((p) => ({
+          ...p,
+          playlists: [item, ...(p.playlists ?? []).filter((x) => x.name.toLowerCase() !== item.name.toLowerCase())],
+        })),
+      setModePlaylist: (mode, playlistId) =>
+        setConfig((p) => ({
+          ...p,
+          ...(mode === "coding"
+            ? { codingPlaylistId: playlistId }
+            : mode === "relax"
+              ? { relaxPlaylistId: playlistId }
+              : { homePlaylistId: playlistId }),
+        })),
       setGlassDropUrl: (url) => setGlassDropUrl(url),
       smartHomeWebhook: config.smartHomeWebhook || "",
       personalityMode: config.personalityMode || "adaptive",
@@ -3364,6 +3385,45 @@ export default function App() {
                       </div>
                     </div>
                   </div>
+                  {displayCount > 1 && (
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button
+                        type="button"
+                        className="icon-chip"
+                        style={{ flex: 1, justifyContent: "center", fontSize: 10.5 }}
+                        onClick={() => {
+                          getBridge()
+                            ?.swap_monitors?.()
+                            .then((r) => {
+                              if (r?.ok) {
+                                playDoneChime(config.hudSounds !== false);
+                                triggerBurst("happy", 1000);
+                              }
+                            })
+                            .catch(() => {});
+                        }}
+                        title="Intercambia en 1 clic las ventanas principales entre Pantalla 1 y Pantalla 2"
+                      >
+                        ⇄ Intercambiar P1 ↔ P2
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-chip"
+                        style={{ flex: 1, justifyContent: "center", fontSize: 10.5 }}
+                        onClick={() => {
+                          getBridge()
+                            ?.move_island_display?.("toggle")
+                            .then((r) => {
+                              if (r?.ok) playWakeChime(config.hudSounds !== false);
+                            })
+                            .catch(() => {});
+                        }}
+                        title="Mueve GlassIsland entre tu monitor principal y secundario"
+                      >
+                        🖥️ Mover Isla P1/P2
+                      </button>
+                    </div>
+                  )}
 
                   {/* Plan de energía + Expresiones del robot */}
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, flexWrap: "wrap" }}>
@@ -3728,6 +3788,119 @@ export default function App() {
                         >
                           🧬 Clonar
                         </button>
+                      </div>
+
+                      <div className="glass-card-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 5 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontSize: 10.5, fontWeight: 700, opacity: 0.9 }}>
+                            🎵 Mis Playlists (YouTube / YT Music / Spotify)
+                          </span>
+                          {(config.playlists ?? []).length > 0 && (
+                            <select
+                              className="glass-input"
+                              style={{ padding: "2px 6px", fontSize: 10, maxWidth: 165 }}
+                              value={config.codingPlaylistId ?? ""}
+                              onChange={(e) =>
+                                setConfig((p) => ({ ...p, codingPlaylistId: e.target.value }))
+                              }
+                              title="Playlist que sonará automáticamente al decir 'Nova modo programación'"
+                            >
+                              <option value="" style={{ background: "#0f172a" }}>
+                                Modo Dev: Búsqueda libre
+                              </option>
+                              {(config.playlists ?? []).map((pl) => (
+                                <option key={pl.id} value={pl.id} style={{ background: "#0f172a" }}>
+                                  Modo Dev: {pl.name} ({pl.platform})
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <input
+                            className="glass-input"
+                            style={{ width: 92, padding: "4px 7px", fontSize: 10.5 }}
+                            value={newPlName}
+                            onChange={(e) => setNewPlName(e.target.value)}
+                            placeholder="Ej: Programar"
+                          />
+                          <input
+                            className="glass-input"
+                            style={{ flex: 1, padding: "4px 7px", fontSize: 10.5 }}
+                            value={newPlUrl}
+                            onChange={(e) => setNewPlUrl(e.target.value)}
+                            placeholder="Pega enlace de YouTube, YT Music o Spotify..."
+                          />
+                          <button
+                            type="button"
+                            className="icon-chip icon-chip--active"
+                            style={{ fontSize: 10.5 }}
+                            onClick={() => {
+                              const n = newPlName.trim();
+                              const u = newPlUrl.trim();
+                              if (!n || !/^(https?|spotify):/i.test(u)) return;
+                              const platform: PlaylistItem["platform"] = u.includes("spotify")
+                                ? "spotify"
+                                : u.includes("music.youtube")
+                                  ? "youtube music"
+                                  : "youtube";
+                              const item: PlaylistItem = {
+                                id: `pl-${Date.now()}`,
+                                name: n,
+                                platform,
+                                url: u,
+                              };
+                              setConfig((p) => ({
+                                ...p,
+                                playlists: [item, ...(p.playlists ?? []).filter((x) => x.name.toLowerCase() !== n.toLowerCase())],
+                                codingPlaylistId:
+                                  !p.codingPlaylistId || /program|dev|codig/i.test(n)
+                                    ? item.id
+                                    : p.codingPlaylistId,
+                              }));
+                              setNewPlName("");
+                              setNewPlUrl("");
+                              playDoneChime(config.hudSounds !== false);
+                            }}
+                          >
+                            + Guardar
+                          </button>
+                        </div>
+                        {(config.playlists ?? []).length > 0 && (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                            {(config.playlists ?? []).map((pl) => (
+                              <span
+                                key={pl.id}
+                                className={`icon-chip${config.codingPlaylistId === pl.id ? " icon-chip--active" : ""}`}
+                                style={{ fontSize: 10, padding: "2px 7px", gap: 5 }}
+                                title={`${pl.platform}: ${pl.url}`}
+                              >
+                                <button
+                                  type="button"
+                                  style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 0, fontSize: 10 }}
+                                  onClick={() => getBridge()?.play_playlist?.(pl.url, pl.platform).catch(() => {})}
+                                  title="Reproducir playlist ahora"
+                                >
+                                  ▶ {pl.name} ({pl.platform === "youtube music" ? "YTM" : pl.platform === "spotify" ? "Spotify" : "YT"})
+                                </button>
+                                <button
+                                  type="button"
+                                  style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 0, opacity: 0.75, fontSize: 10 }}
+                                  title="Eliminar playlist"
+                                  onClick={() =>
+                                    setConfig((p) => ({
+                                      ...p,
+                                      playlists: (p.playlists ?? []).filter((x) => x.id !== pl.id),
+                                      codingPlaylistId: p.codingPlaylistId === pl.id ? "" : p.codingPlaylistId,
+                                    }))
+                                  }
+                                >
+                                  ✕
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
                       {kbLearnedCount > 0 && (

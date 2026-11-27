@@ -29,6 +29,12 @@ const api = {
   open_recent_file: (queryHint) => ipcRenderer.invoke("island:open-recent-file", queryHint),
   move_window_display: (appHint, targetDisplay) =>
     ipcRenderer.invoke("island:move-window-display", appHint, targetDisplay),
+  swap_monitors: () => ipcRenderer.invoke("island:swap-monitors"),
+  snap_window: (appHint, side, targetDisplay) =>
+    ipcRenderer.invoke("island:snap-window", appHint, side, targetDisplay),
+  move_island_display: (targetDisplay) =>
+    ipcRenderer.invoke("island:move-island-display", targetDisplay),
+  play_playlist: (url, platform) => ipcRenderer.invoke("island:play-playlist", url, platform),
   close_active_window: () => ipcRenderer.invoke("island:close-active-window"),
   launch: (target) => ipcRenderer.invoke("island:launch", target),
   launch_and_paste: (target, promptText, appLabel) =>

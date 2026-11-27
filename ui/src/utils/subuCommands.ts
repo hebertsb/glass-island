@@ -5,6 +5,7 @@ import {
   type ModuleId,
   type NovaKnowledgeBase,
   type NovaToolId,
+  type PlaylistItem,
   type ShortcutItem,
   type TelemetryData,
   type ThemeStyle,
@@ -308,6 +309,12 @@ export interface SubuContext {
   scheduleReminder?: (delayMs: number, message: string) => void;
   codingMusic?: string;
   setCodingMusic?: (song: string) => void;
+  playlists?: PlaylistItem[];
+  codingPlaylistId?: string;
+  relaxPlaylistId?: string;
+  homePlaylistId?: string;
+  addPlaylist?: (item: PlaylistItem) => void;
+  setModePlaylist?: (mode: "coding" | "relax" | "home", playlistId: string) => void;
   setGlassDropUrl?: (url: string | null) => void;
   smartHomeWebhook?: string;
   personalityMode?: PersonalityMode;
@@ -584,7 +591,7 @@ export async function executeSubuCommand(
   if (
     activeFolders.length > 0 &&
     q.split(" ").length <= 5 &&
-    !/\b(pdf|archivo|documento|video|foto|imagen|captura|informe)\b/.test(q)
+    !/\b(pdf|archivo|documento|video|foto|imagen|captura|informe|pantalla|monitor|izquierda|derecha|playlist)\b/.test(q)
   ) {
     let pickIdx = -1;
     if (/\b(primera|primero|uno|1)\b/.test(q)) pickIdx = 0;
@@ -904,6 +911,145 @@ export async function executeSubuCommand(
       : { ok: false, reply: `No encontré una ventana abierta de ${appTarget}.` };
   }
 
+  // 0e1. Tool: Mover la propia GlassIsland al Monitor 1 o 2 ("Nova ven a la pantalla 2", "cámbiate de pantalla", "vuelve a la pantalla 1")
+  if (
+    /^(?:ven|vente|venite|vuelve|volvete|cambiate|pasate|muevete|anda|andate)\b/.test(q) &&
+    /\b(?:pantalla|monitor)\b/.test(q)
+  ) {
+    const dest: "primary" | "secondary" | "toggle" =
+      /secundari|segund|\b2\b|\bdos\b/.test(q)
+        ? "secondary"
+        : /principal|primer|\b1\b|\buno\b|laptop/.test(q)
+          ? "primary"
+          : "toggle";
+    const res = await api?.move_island_display?.(dest);
+    return res?.ok
+      ? { ok: true, reply: `Aquí estoy, ${boss}, ya me pasé a tu ${res.display}.` }
+      : { ok: false, reply: "No detecté un segundo monitor conectado para moverme." };
+  }
+
+  // 0e1b. Tool: Intercambiar Pantalla 1 <-> Pantalla 2 ("intercambia las pantallas", "cambia de lado las ventanas")
+  if (
+    /\b(?:intercambia|intercambiar|swap|cambia\s+de\s+lado|invierte)\b/.test(q) &&
+    /\b(?:pantallas?|monitores?|ventanas?)\b/.test(q)
+  ) {
+    const res = await api?.swap_monitors?.();
+    return res?.ok
+      ? { ok: true, reply: `Listo, ${boss}. Intercambié tus ventanas entre Pantalla 1 y Pantalla 2.` }
+      : { ok: false, reply: "Necesitas dos monitores conectados con ventanas visibles para intercambiarlos." };
+  }
+
+  // 0e1c. Tool: Dividir pantalla (Snap Izquierda / Derecha) — soporta 1 o 2 apps a la vez:
+  // "pon VS Code a la izquierda y Chrome a la derecha", "pon Chrome a la izquierda en pantalla 2"
+  const dualSnapMatch = q.match(
+    /^(?:pon|pone|ponme|poneme|coloca|ajusta|mueve|divide)\s+(.+?)\s+a\s+la\s+(izquierda|derecha)\s+y\s+(?:a\s+)?(.+?)\s+a\s+la\s+(izquierda|derecha)(?:\s+en\s+(?:la\s+)?(pantalla\s+2|pantalla\s+dos|pantalla\s+secundaria|segunda\s+pantalla|monitor\s+2|pantalla\s+1|pantalla\s+principal))?$/,
+  );
+  if (dualSnapMatch) {
+    const normAppHint = (raw: string) => {
+      const h = raw.replace(/^(?:a\s+|el\s+|la\s+|la\s+ventana\s+de\s+)/g, "").trim();
+      if (/^(?:google|google chrome|chrome|crome|crohn|crom)$/i.test(h)) return "chrome";
+      if (/^(?:vs code|vscode|visual studio code|visual studio|code)$/i.test(h)) return "Code";
+      if (/^(?:edge|microsoft edge)$/i.test(h)) return "msedge";
+      return h;
+    };
+    const disp: "primary" | "secondary" = /2|dos|secundari|segund/.test(dualSnapMatch[5] || "")
+      ? "secondary"
+      : "primary";
+    const appA = normAppHint(dualSnapMatch[1]);
+    const sideA = dualSnapMatch[2] === "derecha" ? "right" : "left";
+    const appB = normAppHint(dualSnapMatch[3]);
+    const sideB = dualSnapMatch[4] === "derecha" ? "right" : "left";
+    await api?.snap_window?.(appA, sideA, disp);
+    await api?.snap_window?.(appB, sideB, disp);
+    return {
+      ok: true,
+      reply: `Listo, ${boss}. Dividí la pantalla con ${dualSnapMatch[1].trim()} a la ${dualSnapMatch[2]} y ${dualSnapMatch[3].trim()} a la ${dualSnapMatch[4]}.`,
+    };
+  }
+  const singleSnapMatch = q.match(
+    /^(?:pon|pone|ponme|poneme|coloca|ajusta|mueve)\s+(?:(?:la\s+ventana\s+de\s+|esta\s+ventana|(.+?))\s+)?a\s+la\s+(izquierda|derecha)(?:\s+en\s+(?:la\s+)?(pantalla\s+2|pantalla\s+dos|pantalla\s+secundaria|segunda\s+pantalla|monitor\s+2|pantalla\s+1|pantalla\s+principal))?$/,
+  );
+  if (singleSnapMatch) {
+    let appHint = (singleSnapMatch[1] || "").replace(/^(?:esta\s+ventana|esto|eso)$/g, "").trim();
+    if (/^(?:google|google chrome|chrome|crome|crohn|crom)$/i.test(appHint)) appHint = "chrome";
+    else if (/^(?:vs code|vscode|visual studio code|visual studio|code)$/i.test(appHint)) appHint = "Code";
+    const side = singleSnapMatch[2] === "derecha" ? "right" : "left";
+    const disp: "primary" | "secondary" = /2|dos|secundari|segund/.test(singleSnapMatch[3] || "")
+      ? "secondary"
+      : "primary";
+    const res = await api?.snap_window?.(appHint, side, disp);
+    return res?.ok
+      ? { ok: true, reply: `Listo, ${boss}. Ajusté ${res.title || "la ventana"} a la mitad ${res.side}.` }
+      : { ok: false, reply: "No encontré esa ventana abierta para dividir la pantalla." };
+  }
+
+  // 0e1d. Tool: Guardar o reproducir Playlists reales (YouTube, YouTube Music, Spotify)
+  const savePlMatch = q.match(
+    /^(?:guarda|guardame|agrega|anade|registra)\s+(?:esta\s+|mi\s+)?playlist\s+(?:como|de|para|llamada)\s+(.+)$/,
+  );
+  if (savePlMatch) {
+    const plName = savePlMatch[1].trim();
+    const clipUrl = ((await api?.get_clipboard().catch(() => "")) || "").trim();
+    if (!/^(https?|spotify):/i.test(clipUrl)) {
+      return {
+        ok: false,
+        reply: `${boss}, copia primero el enlace de tu playlist de YouTube, YouTube Music o Spotify (Ctrl+C) y vuelve a decirme.`,
+      };
+    }
+    const platform: PlaylistItem["platform"] = clipUrl.includes("spotify")
+      ? "spotify"
+      : clipUrl.includes("music.youtube")
+        ? "youtube music"
+        : "youtube";
+    const niceName = plName.charAt(0).toUpperCase() + plName.slice(1);
+    const item: PlaylistItem = {
+      id: `pl-${Date.now()}`,
+      name: niceName,
+      platform,
+      url: clipUrl,
+    };
+    ctx.addPlaylist?.(item);
+    let extra = "";
+    if (/program|codig|dev|trabaj/.test(plName)) {
+      ctx.setModePlaylist?.("coding", item.id);
+      extra = " y la asigné automáticamente a tu Modo Programación";
+    } else if (/descans|chill|relax/.test(plName)) {
+      ctx.setModePlaylist?.("relax", item.id);
+      extra = " y la asigné a tu Modo Descanso";
+    } else if (/casa|noche/.test(plName)) {
+      ctx.setModePlaylist?.("home", item.id);
+      extra = " y la asigné a tu Modo Casa";
+    }
+    return {
+      ok: true,
+      reply: `¡Listo, ${boss}! Guardé tu playlist "${niceName}" de ${platform}${extra}.`,
+    };
+  }
+
+  const playPlMatch = q.match(
+    /^(?:pon|pone|ponme|poneme|reproduce|reproducime|abre|abrime)\s+(?:mi\s+|la\s+)?playlist\s*(?:de\s+|para\s+)?(.*)$/,
+  );
+  if (playPlMatch) {
+    const queryPl = norm(playPlMatch[1] || "");
+    const list = ctx.playlists || [];
+    const matched =
+      (queryPl
+        ? list.find((p) => norm(p.name).includes(queryPl) || queryPl.includes(norm(p.name)))
+        : list.find((p) => p.id === ctx.codingPlaylistId) || list[0]) || null;
+    if (matched) {
+      await api?.play_playlist?.(matched.url, matched.platform);
+      ctx.setActiveTab?.("music");
+      return {
+        ok: true,
+        reply: `Enseguida, ${boss}. Reproduciendo tu playlist "${matched.name}" en ${matched.platform}.`,
+      };
+    }
+    return {
+      ok: false,
+      reply: `${boss}, todavía no guardaste esa playlist. Pega su enlace en Ajustes → Nova e IA, o cópialo y dime "guarda esta playlist como programar".`,
+    };
+  }
+
   // 0e2. Tool: Mover ventana entre Pantalla Principal (1) y Secundaria (2) — INDEPENDIENTE DEL ORDEN DE LAS PALABRAS
   // Soporta tanto "llévalo Chrome a la pantalla 2" como "llévalo a la pantalla uno Chrome" o "pasa a la segunda pantalla VS Code"
   const MOVE_VERB_RE =
@@ -1050,12 +1196,19 @@ export async function executeSubuCommand(
     )
   ) {
     const customSongM = q.match(/\bcon\s+(.+)$/);
+    const assignedCodingPl = !customSongM
+      ? (ctx.playlists || []).find((p) => p.id === ctx.codingPlaylistId)
+      : undefined;
     const song = (customSongM?.[1] || ctx.codingMusic || "Avicii Levels").trim();
     ctx.setBrightness(75);
     await api?.set_brightness(75);
     ctx.startFocus(25);
     ctx.setActiveTab?.("focus");
-    await api?.play_media_query(song, "youtube");
+    if (assignedCodingPl) {
+      await api?.play_playlist?.(assignedCodingPl.url, assignedCodingPl.platform);
+    } else {
+      await api?.play_media_query(song, "youtube");
+    }
     // Trae al frente tu ventana existente de VS Code (o la abre si no estaba abierta)
     const focusedVs = await api?.focus_app?.("Code").catch(() => ({ ok: false }));
     if (!focusedVs?.ok) {
@@ -1066,8 +1219,22 @@ export async function executeSubuCommand(
         await api?.launch(vsApp.lnkPath || vsApp.exePath);
       }
     }
-    const reply = `Activando modo programación: abriendo Visual Studio Code, poniendo ${song}, brillo al 75% y Focus de 25 minutos.`;
+    const musicDesc = assignedCodingPl
+      ? `tu playlist ${assignedCodingPl.name} en ${assignedCodingPl.platform}`
+      : song;
+    const reply = `Activando modo programación: Visual Studio Code listo, poniendo ${musicDesc}, brillo al 75% y Focus de 25 minutos.`;
     pushContextTurn("assistant", reply, "focus");
+    return { ok: true, reply };
+  }
+  if (q.includes("modo presentacion") || q.includes("modo exposicion")) {
+    await api?.close_app("youtube").catch(() => {});
+    await api?.media_control("vol_mute").catch(() => {});
+    ctx.setBrightness(95);
+    await api?.set_brightness(95);
+    await api?.system_action("dnd").catch(() => {});
+    await api?.move_window_display?.("chrome", "secondary").catch(() => {});
+    const reply = `Modo presentación activado, ${boss}. Audio y notificaciones silenciadas, brillo al 95 y tu navegador listo en la pantalla externa.`;
+    pushContextTurn("assistant", reply, "mode_presentation");
     return { ok: true, reply };
   }
   if (q.includes("modo universidad") || q.includes("modo estudio")) {
@@ -1082,9 +1249,14 @@ export async function executeSubuCommand(
     ctx.pauseFocus();
     ctx.setBrightness(60);
     await api?.set_brightness(60);
-    await api?.play_media_query("musica chill relajante", "youtube");
+    const relaxPl = (ctx.playlists || []).find((p) => p.id === ctx.relaxPlaylistId);
+    if (relaxPl) {
+      await api?.play_playlist?.(relaxPl.url, relaxPl.platform);
+    } else {
+      await api?.play_media_query("musica chill relajante", "youtube");
+    }
     ctx.setActiveTab?.("music");
-    const reply = `Modo descanso activado, ${boss}. Focus pausado, brillo al 60 y música suave lista.`;
+    const reply = `Modo descanso activado, ${boss}. Focus pausado, brillo al 60 y ${relaxPl ? `tu playlist ${relaxPl.name}` : "música suave"} lista.`;
     pushContextTurn("assistant", reply, "play_music");
     return { ok: true, reply };
   }
@@ -1143,7 +1315,12 @@ export async function executeSubuCommand(
     if (ctx.smartHomeWebhook) {
       await api?.smart_home(ctx.smartHomeWebhook, "mode_home").catch(() => {});
     }
-    await api?.play_media_query("lofi chill night beats", "youtube");
+    const homePl = (ctx.playlists || []).find((p) => p.id === ctx.homePlaylistId);
+    if (homePl) {
+      await api?.play_playlist?.(homePl.url, homePl.platform);
+    } else {
+      await api?.play_media_query("lofi chill night beats", "youtube");
+    }
     ctx.setActiveTab?.("home");
     const reply = ctx.smartHomeWebhook
       ? `Modo casa activado, ${boss}. Luces ajustadas, brillo al 40 y música ambiente lista.`

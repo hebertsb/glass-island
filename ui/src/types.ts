@@ -166,6 +166,13 @@ export interface NovaKnowledgeBase {
   stats: { totalCommands: number };
 }
 
+export interface PlaylistItem {
+  id: string;
+  name: string;
+  platform: "youtube" | "youtube music" | "spotify";
+  url: string;
+}
+
 export interface IslandConfig {
   shape: IslandShape;
   anchor: IslandAnchor;
@@ -184,6 +191,10 @@ export interface IslandConfig {
   alwaysListen: boolean;
   whisperOffline?: boolean;
   codingMusic?: string;
+  playlists?: PlaylistItem[];
+  codingPlaylistId?: string;
+  relaxPlaylistId?: string;
+  homePlaylistId?: string;
   hudSounds?: boolean;
   greetOnStart?: boolean;
   personalityMode?: "adaptive" | "jarvis" | "friendly" | "executive";
@@ -218,6 +229,10 @@ export const DEFAULT_CONFIG: IslandConfig = {
   assistantName: "Nova",
   userName: "",
   userOnboarded: false,
+  playlists: [],
+  codingPlaylistId: "",
+  relaxPlaylistId: "",
+  homePlaylistId: "",
   voiceEnabled: true,
   alwaysListen: true,
   voiceName: "es-BO-SofiaNeural",
@@ -328,6 +343,10 @@ export interface GlassIslandApi {
   }>;
   open_recent_file?: (queryHint?: string) => Promise<{ ok: boolean; name?: string; path?: string; folder?: string }>;
   move_window_display?: (appHint?: string, targetDisplay?: "primary" | "secondary") => Promise<{ ok: boolean; title?: string; target?: string }>;
+  swap_monitors?: () => Promise<{ ok: boolean; p1?: string; p2?: string; reason?: string }>;
+  snap_window?: (appHint?: string, side?: "left" | "right", targetDisplay?: "primary" | "secondary") => Promise<{ ok: boolean; title?: string; side?: string }>;
+  move_island_display?: (targetDisplay?: "primary" | "secondary" | "toggle") => Promise<{ ok: boolean; display?: string }>;
+  play_playlist?: (url: string, platform?: string) => Promise<{ ok: boolean; usedApp?: boolean; platform?: string }>;
   close_active_window?: () => Promise<{ ok: boolean; title?: string }>;
   launch: (target: string) => Promise<{ ok: boolean; error?: string }>;
   launch_and_paste: (
