@@ -355,22 +355,12 @@ export interface SubuContext {
 }
 
 export const VOICE_PROFILES = [
-  { id: "gemini:Charon", label: "🎙️ Jarvis · Gemini Pro TTS (Ultra-humana + Caché 0ms)" },
-  { id: "gemini:Aoede", label: "🎙️ AVA · Gemini Pro TTS (Ultra-humana + Caché 0ms)" },
-  { id: "gemini:Fenrir", label: "🎙️ KAI · Gemini Pro TTS (Grave + Caché 0ms)" },
-  { id: "gemini:Kore", label: "🎙️ Nova · Gemini Pro TTS (Natural + Caché 0ms)" },
-  { id: "clone:jarvis", label: "🧬 Jarvis Clonado · 100% Offline (RTX 5050)" },
-  { id: "en-US-BrianMultilingualNeural", label: "✨ Brian HD · Jarvis Grave (Gratis)" },
-  { id: "en-US-AndrewMultilingualNeural", label: "✨ Andrew HD · KAI Natural (Gratis)" },
-  { id: "en-US-EmmaMultilingualNeural", label: "✨ Emma HD · AVA Cálida (Gratis)" },
-  { id: "en-US-AvaMultilingualNeural", label: "✨ Ava HD · Bilingüe ES/EN (Gratis)" },
-  { id: "es-MX-JorgeNeural", label: "🎩 Jorge · J.A.R.V.I.S. Latino Grave (Gratis, Sin Límite)" },
-  { id: "es-ES-AlvaroNeural", label: "🎩 Álvaro · J.A.R.V.I.S. Clásico Iron Man (Gratis, Sin Límite)" },
-  { id: "es-CO-GonzaloNeural", label: "Gonzalo · Colombia Fluido (Gratis, Sin Límite)" },
-  { id: "es-AR-TomasNeural", label: "Tomás · Argentina Natural (Gratis, Sin Límite)" },
-  { id: "es-BO-SofiaNeural", label: "Sofía · Bolivia (Gratis, Sin Límite)" },
-  { id: "es-BO-MarceloNeural", label: "Marcelo · Bolivia (Gratis, Sin Límite)" },
-  { id: "es-MX-DaliaNeural", label: "Dalia · México (Gratis, Sin Límite)" },
+  { id: "es-MX-JorgeNeural", label: "🎩 Jorge · J.A.R.V.I.S. Latino [Gratis · Sin API · 0% GPU]" },
+  { id: "es-ES-AlvaroNeural", label: "🎩 Álvaro · J.A.R.V.I.S. Clásico [Gratis · Sin API · 0% GPU]" },
+  { id: "es-BO-MarceloNeural", label: "🇧🇴 Marcelo · Bolivia [Gratis · Sin API · 0% GPU]" },
+  { id: "es-BO-SofiaNeural", label: "🇧🇴 Sofía · Bolivia [Gratis · Sin API · 0% GPU]" },
+  { id: "gemini:Charon", label: "☁️ Jarvis Charon [API Gemini · Cuota diaria]" },
+  { id: "clone:jarvis", label: "🧬 Jarvis Clonado [100% Local Offline · GPU]" },
 ] as const;
 
 function norm(text: string): string {
