@@ -996,6 +996,158 @@ app.whenReady().then(() => {
     }
   });
 
+  // Cliente JSON-RPC 2.0 MCP para HomeSOC (soporta local http://localhost:4000/api/v1/mcp y Tailscale)
+  ipcMain.handle("island:homesoc-mcp-call", async (_e, pregunta, endpointUrl, token) => {
+    const cleanQ = String(pregunta || "").trim();
+    if (!cleanQ) return { ok: false, error: "empty_question" };
+
+    // Resuelve URL y token desde: argumento UI -> config.json -> variable de entorno HOMESOC_MCP_TOKEN
+    let cfg = {};
+    try {
+      if (fs.existsSync(CONFIG_FILE)) {
+        cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8").replace(/^\uFEFF/, ""));
+      }
+    } catch {
+      cfg = {};
+    }
+    let rawUrl = String(
+      endpointUrl || cfg.homesocUrl || process.env.HOMESOC_MCP_URL || "http://localhost:4000/api/v1/mcp",
+    ).trim();
+    if (rawUrl && !/\/api\/v1\/mcp\/?$/i.test(rawUrl)) {
+      rawUrl = rawUrl.replace(/\/+$/, "") + "/api/v1/mcp";
+    }
+    const authToken = String(token || cfg.homesocToken || process.env.HOMESOC_MCP_TOKEN || "").trim();
+    if (!authToken) {
+      return {
+        ok: false,
+        error: "missing_token",
+        textoParaVoz:
+          "Todavía no configuraste tu token de HomeSOC. Pégalo en Ajustes, pestaña Nova e IA, en la sección Servidor HomeSOC.",
+      };
+    }
+
+    return await new Promise((resolve) => {
+      try {
+        const parsedUrl = new URL(rawUrl);
+        const mod = parsedUrl.protocol === "https:" ? https : require("http");
+        const body = JSON.stringify({
+          jsonrpc: "2.0",
+          id: Date.now(),
+          method: "tools/call",
+          params: {
+            name: "consultar_asistente_voz",
+            arguments: { pregunta: cleanQ },
+          },
+        });
+        const req = mod.request(
+          parsedUrl,
+          {
+            method: "POST",
+            timeout: 9000,
+            headers: {
+              "Content-Type": "application/json",
+              "Content-Length": Buffer.byteLength(body),
+              Authorization: `Bearer ${authToken}`,
+            },
+          },
+          (res) => {
+            const statusCode = res.statusCode || 0;
+            let raw = "";
+            res.setEncoding("utf8");
+            res.on("data", (c) => (raw += c));
+            res.on("end", () => {
+              if (statusCode === 401 || statusCode === 403) {
+                resolve({
+                  ok: false,
+                  statusCode,
+                  error: "unauthorized",
+                  textoParaVoz:
+                    statusCode === 403
+                      ? "Tu token de HomeSOC no tiene permiso de escritura para esa acción."
+                      : "El token de HomeSOC fue rechazado. Revísalo en Ajustes, Nova e IA.",
+                });
+                return;
+              }
+              try {
+                const j = JSON.parse(raw);
+                if (j?.error?.message) {
+                  resolve({
+                    ok: false,
+                    statusCode,
+                    error: String(j.error.message),
+                    textoParaVoz: `HomeSOC respondió con un aviso: ${j.error.message}`,
+                  });
+                  return;
+                }
+                const result = j?.result ?? j;
+                let spoken = "";
+                if (typeof result?.textoParaVoz === "string" && result.textoParaVoz.trim()) {
+                  spoken = result.textoParaVoz.trim();
+                } else if (Array.isArray(result?.content)) {
+                  const firstTxt = result.content.find((c) => typeof c?.text === "string")?.text || "";
+                  if (firstTxt.trim().startsWith("{")) {
+                    try {
+                      const inner = JSON.parse(firstTxt);
+                      spoken = String(inner?.textoParaVoz || inner?.respuesta || inner?.message || firstTxt).trim();
+                    } catch {
+                      spoken = firstTxt.trim();
+                    }
+                  } else {
+                    spoken = firstTxt.trim();
+                  }
+                } else if (typeof result?.structuredContent?.textoParaVoz === "string") {
+                  spoken = result.structuredContent.textoParaVoz.trim();
+                } else if (typeof result === "string") {
+                  spoken = result.trim();
+                }
+
+                if (spoken) {
+                  resolve({ ok: true, statusCode, textoParaVoz: spoken });
+                } else {
+                  resolve({
+                    ok: statusCode >= 200 && statusCode < 300,
+                    statusCode,
+                    textoParaVoz: "HomeSOC respondió correctamente, pero no envió texto para leer.",
+                  });
+                }
+              } catch {
+                resolve({
+                  ok: false,
+                  statusCode,
+                  error: "invalid_json",
+                  textoParaVoz: "No pude leer la respuesta del servidor HomeSOC.",
+                });
+              }
+            });
+          },
+        );
+        req.on("error", () =>
+          resolve({
+            ok: false,
+            error: "unreachable",
+            textoParaVoz: "No pude conectarme con tu servidor HomeSOC. Verifica que esté encendido y accesible.",
+          }),
+        );
+        req.on("timeout", () => {
+          req.destroy();
+          resolve({
+            ok: false,
+            error: "timeout",
+            textoParaVoz: "El servidor HomeSOC tardó demasiado en responder.",
+          });
+        });
+        req.write(body);
+        req.end();
+      } catch {
+        resolve({
+          ok: false,
+          error: "invalid_url",
+          textoParaVoz: "La URL del servidor HomeSOC en Ajustes no es válida.",
+        });
+      }
+    });
+  });
+
   // Cierra la ventana activa (excluyendo GlassIsland) para "cierra esta ventana" / "cierra esto"
   ipcMain.handle("island:close-active-window", async () => {
     return await new Promise((resolve) => {
@@ -1542,6 +1694,7 @@ app.whenReady().then(() => {
       `- create_project (arg: nombre de la carpeta/proyecto nuevo a crear y abrir en VS Code; platform: proyectos_personales|escritorio|universidad|documentos)\n` +
       `- modo_programacion | modo_proyecto | modo_semana | modo_casa | modo_universidad | modo_descanso | briefing\n` +
       `- smart_home (arg: lights_on|lights_off)\n` +
+      `- homesoc_query (arg: pregunta o acción sobre el servidor HomeSOC / homelab / contenedores Docker / alertas de seguridad / despliegues)\n` +
       `- control_media (arg: play_pause|next|prev|vol_up|vol_down|vol_mute)\n` +
       `- set_brightness (level: 10..100)\n` +
       `- start_focus (level: minutos 5..60)\n` +

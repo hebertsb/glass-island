@@ -20,7 +20,7 @@ export interface ConversationTurn {
 }
 
 export interface PendingConfirmation {
-  kind: "launch" | "system_action";
+  kind: "launch" | "system_action" | "homesoc_action";
   target: string;
   label: string;
   promptText?: string;

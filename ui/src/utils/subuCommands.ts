@@ -236,6 +236,13 @@ export async function executeNovaTool(
   if (tool === "smart_home") {
     return await executeSubuCommand(cleanArg === "lights_off" ? "apaga las luces" : "prende las luces", ctx, true);
   }
+  if (tool === "homesoc_query") {
+    const res = await api?.homesoc_mcp_call?.(cleanArg, ctx.homesocUrl, ctx.homesocToken);
+    return {
+      ok: Boolean(res?.ok),
+      reply: res?.textoParaVoz || `No pude consultar HomeSOC en este momento, ${boss}.`,
+    };
+  }
   if (tool === "custom_macro") {
     const spec = norm(cleanArg);
     const doneSteps: string[] = [];
@@ -317,6 +324,8 @@ export interface SubuContext {
   setModePlaylist?: (mode: "coding" | "relax" | "home", playlistId: string) => void;
   setGlassDropUrl?: (url: string | null) => void;
   smartHomeWebhook?: string;
+  homesocUrl?: string;
+  homesocToken?: string;
   personalityMode?: PersonalityMode;
   acousticTone?: "urgent" | "calm" | "normal";
   aiBrainEnabled?: boolean;
@@ -644,6 +653,16 @@ export async function executeSubuCommand(
   ) {
     const pending = consumePendingConfirm();
     if (pending) {
+      if (pending.kind === "homesoc_action") {
+        const res = await api?.homesoc_mcp_call?.(pending.target, ctx.homesocUrl, ctx.homesocToken);
+        const reply =
+          res?.textoParaVoz ||
+          (res?.ok
+            ? `Aprobado, ${boss}. Acción ejecutada en HomeSOC.`
+            : `No pude ejecutar esa acción en HomeSOC, ${boss}.`);
+        pushContextTurn("assistant", reply, "homesoc_query", pending.target);
+        return { ok: Boolean(res?.ok), reply };
+      }
       if (pending.kind === "system_action") {
         await api?.system_action(pending.target);
         const reply = `Aprobado, ${boss}. Ejecutando ${pending.label}.`;
@@ -1048,6 +1067,37 @@ export async function executeSubuCommand(
       ok: false,
       reply: `${boss}, todavía no guardaste esa playlist. Pega su enlace en Ajustes → Nova e IA, o cópialo y dime "guarda esta playlist como programar".`,
     };
+  }
+
+  // 0e1e. Tool: Servidor HomeSOC vía JSON-RPC 2.0 MCP (consultar estado, contenedores, alertas, seguridad o redeploy con HITL)
+  const isHomeSocQuery =
+    /\b(?:homesoc|home\s+soc|homelab|mi\s+servidor|el\s+servidor|estado\s+del\s+servidor|contenedores?|contenedor|despliegues?|redeploy|redesplegar|seguridad\s+del\s+servidor|resumen\s+de\s+seguridad|alertas?\s+de\s+seguridad|alertas?\s+del\s+servidor|auditoria\s+del\s+servidor|servicios?\s+del\s+servidor|servicios?\s+desplegados)\b/.test(
+      q,
+    ) && !/^(?:abre|abrir|abreme|abrime)\s+(?:docker|homesoc)\b/.test(q);
+  if (isHomeSocQuery) {
+    const isWriteAction = /\b(?:redeploy|redesplegar|redespliega|reinicia|reiniciar|deten|detener|apaga|apagar|para|parar|elimina|eliminar|borra|borrar|inicia|iniciar|levanta|levantar)\b/.test(
+      q,
+    );
+    // Patrón 09 · Human-in-the-Loop: cualquier operación de escritura en el servidor pide confirmación humana
+    if (isWriteAction && !/\b(?:confirmado|confirmar|forzar|sin preguntar)\b/.test(q)) {
+      setPendingConfirm({
+        kind: "homesoc_action",
+        target: original,
+        label: `ejecutar en HomeSOC: "${q}"`,
+        at: Date.now(),
+      });
+      return {
+        ok: true,
+        keepOpen: true,
+        reply: `${boss}, acción de escritura en HomeSOC (nivel Aprobar): ¿confirmas que ejecute "${q}"? Di "sí" o "aprobar".`,
+      };
+    }
+    const res = await api?.homesoc_mcp_call?.(original, ctx.homesocUrl, ctx.homesocToken);
+    const reply =
+      res?.textoParaVoz ||
+      `No pude comunicarme con tu servidor HomeSOC, ${boss}.`;
+    pushContextTurn("assistant", reply, "homesoc_query", q);
+    return { ok: Boolean(res?.ok), reply };
   }
 
   // 0e2. Tool: Mover ventana entre Pantalla Principal (1) y Secundaria (2) — INDEPENDIENTE DEL ORDEN DE LAS PALABRAS
@@ -2201,6 +2251,12 @@ export async function executeSubuCommand(
           await executeSubuCommand("resumen del dia", ctx, true);
         } else if (t === "smart_home") {
           await executeSubuCommand(a === "lights_off" ? "apaga las luces" : "prende las luces", ctx, true);
+        } else if (t === "homesoc_query") {
+          const r = await api.homesoc_mcp_call?.(a || original, ctx.homesocUrl, ctx.homesocToken);
+          if (r?.ok && r.textoParaVoz) {
+            return { ok: true, reply: r.textoParaVoz };
+          }
+          if (!r?.ok) failedObservations.push(r?.textoParaVoz || "no pude consultar HomeSOC");
         } else if (t === "control_media" && a) {
           await api.media_control(a);
         } else if (t === "set_brightness" && typeof act.level === "number") {

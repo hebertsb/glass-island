@@ -1103,6 +1103,8 @@ export default function App() {
         })),
       setGlassDropUrl: (url) => setGlassDropUrl(url),
       smartHomeWebhook: config.smartHomeWebhook || "",
+      homesocUrl: config.homesocUrl || "http://localhost:4000/api/v1/mcp",
+      homesocToken: config.homesocToken || "",
       personalityMode: config.personalityMode || "adaptive",
       acousticTone: lastAcousticToneRef.current,
       aiBrainEnabled: config.aiBrainEnabled !== false,
@@ -3788,6 +3790,69 @@ export default function App() {
                         >
                           🧬 Clonar
                         </button>
+                      </div>
+
+                      <div className="glass-card-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 5 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontSize: 10.5, fontWeight: 700, opacity: 0.9 }}>
+                            🛡️ Servidor HomeSOC (MCP · Voz N.O.V.A.)
+                          </span>
+                          <button
+                            type="button"
+                            className="icon-chip icon-chip--active"
+                            style={{ fontSize: 10 }}
+                            onClick={async () => {
+                              setSubuOpen(true);
+                              setSubuReply("Consultando tu servidor HomeSOC vía MCP...");
+                              const res = await getBridge()
+                                ?.homesoc_mcp_call?.(
+                                  "¿Cómo está mi servidor?",
+                                  config.homesocUrl || "http://localhost:4000/api/v1/mcp",
+                                  config.homesocToken || "",
+                                )
+                                .catch(() => null);
+                              const msg =
+                                res?.textoParaVoz ||
+                                "No pude conectar con HomeSOC. Verifica la URL y el token.";
+                              setSubuReply(msg);
+                              if (res?.ok) playDoneChime(config.hudSounds !== false);
+                              void speakAsSubu(
+                                msg,
+                                config.voiceEnabled !== false,
+                                config.voiceName || "es-MX-JorgeNeural",
+                                () => setSpeaking(true),
+                                () => setSpeaking(false),
+                                config.geminiApiKey || "",
+                              );
+                            }}
+                            title="Prueba la conexión MCP con HomeSOC y escucha la respuesta por voz"
+                          >
+                            ⚡ Probar MCP
+                          </button>
+                        </div>
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <input
+                            className="glass-input"
+                            style={{ flex: 1, padding: "4px 7px", fontSize: 10.5 }}
+                            value={config.homesocUrl ?? "http://localhost:4000/api/v1/mcp"}
+                            onChange={(e) =>
+                              setConfig((p) => ({ ...p, homesocUrl: e.target.value }))
+                            }
+                            placeholder="http://localhost:4000/api/v1/mcp (o IP Tailscale)"
+                            title="Endpoint JSON-RPC 2.0 MCP de tu servidor HomeSOC"
+                          />
+                          <input
+                            type="password"
+                            className="glass-input"
+                            style={{ width: 155, padding: "4px 7px", fontSize: 10.5 }}
+                            value={config.homesocToken ?? ""}
+                            onChange={(e) =>
+                              setConfig((p) => ({ ...p, homesocToken: e.target.value }))
+                            }
+                            placeholder="Token Bearer (HOMESOC_MCP_TOKEN)"
+                            title="Genera este token en HomeSOC → Configuración General → Servidor MCP"
+                          />
+                        </div>
                       </div>
 
                       <div className="glass-card-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 5 }}>
