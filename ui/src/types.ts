@@ -149,7 +149,7 @@ export type NovaToolId =
   | "modo_descanso"
   | "briefing"
   | "smart_home"
-  | "homesoc_query"
+  | "mcp_query"
   | "custom_macro";
 
 export interface LearnedPattern {
@@ -200,8 +200,10 @@ export interface IslandConfig {
   greetOnStart?: boolean;
   personalityMode?: "adaptive" | "jarvis" | "friendly" | "executive";
   smartHomeWebhook?: string;
-  homesocUrl?: string;
-  homesocToken?: string;
+  mcpServerName?: string;
+  mcpServerUrl?: string;
+  mcpToolName?: string;
+  mcpServerToken?: string;
   voiceName: string;
   aiBrainEnabled?: boolean;
   geminiApiKey?: string;
@@ -236,8 +238,10 @@ export const DEFAULT_CONFIG: IslandConfig = {
   codingPlaylistId: "",
   relaxPlaylistId: "",
   homePlaylistId: "",
-  homesocUrl: "http://localhost:4000/api/v1/mcp",
-  homesocToken: "",
+  mcpServerName: "",
+  mcpServerUrl: "",
+  mcpToolName: "consultar_asistente_voz",
+  mcpServerToken: "",
   voiceEnabled: true,
   alwaysListen: true,
   voiceName: "es-BO-SofiaNeural",
@@ -352,11 +356,13 @@ export interface GlassIslandApi {
   snap_window?: (appHint?: string, side?: "left" | "right", targetDisplay?: "primary" | "secondary") => Promise<{ ok: boolean; title?: string; side?: string }>;
   move_island_display?: (targetDisplay?: "primary" | "secondary" | "toggle") => Promise<{ ok: boolean; display?: string }>;
   play_playlist?: (url: string, platform?: string) => Promise<{ ok: boolean; usedApp?: boolean; platform?: string }>;
-  homesoc_mcp_call?: (
+  mcp_call?: (
     pregunta: string,
-    endpointUrl?: string,
-    token?: string,
+    opts?: { endpointUrl?: string; token?: string; toolName?: string; serverName?: string },
   ) => Promise<{ ok: boolean; textoParaVoz?: string; error?: string; statusCode?: number }>;
+  mcp_list_tools?: (
+    opts?: { endpointUrl?: string; token?: string },
+  ) => Promise<{ ok: boolean; tools?: { name: string; description?: string }[]; error?: string }>;
   close_active_window?: () => Promise<{ ok: boolean; title?: string }>;
   launch: (target: string) => Promise<{ ok: boolean; error?: string }>;
   launch_and_paste: (

@@ -612,6 +612,7 @@ export default function App() {
   const [editPhrase, setEditPhrase] = useState("");
   const [editTool, setEditTool] = useState<NovaToolId>("custom_macro");
   const [editArg, setEditArg] = useState("");
+  const [mcpTools, setMcpTools] = useState<{ name: string; description?: string }[]>([]);
 
   const dragRef = useRef<{ active: boolean; lastX: number; lastY: number }>({
     active: false,
@@ -1109,8 +1110,10 @@ export default function App() {
         })),
       setGlassDropUrl: (url) => setGlassDropUrl(url),
       smartHomeWebhook: config.smartHomeWebhook || "",
-      homesocUrl: config.homesocUrl || "http://localhost:4000/api/v1/mcp",
-      homesocToken: config.homesocToken || "",
+      mcpServerName: config.mcpServerName || "",
+      mcpServerUrl: config.mcpServerUrl || "",
+      mcpToolName: config.mcpToolName || "consultar_asistente_voz",
+      mcpServerToken: config.mcpServerToken || "",
       personalityMode: config.personalityMode || "adaptive",
       acousticTone: lastAcousticToneRef.current,
       aiBrainEnabled: config.aiBrainEnabled !== false,
@@ -3842,70 +3845,139 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* SECCIÓN 1B: CONEXIONES, SERVIDOR HOMESOC (MCP), PLAYLISTS, DOMÓTICA Y MEMORIA */}
+                  {/* SECCIÓN 1B: CONEXIONES, SERVIDOR MCP EXTERNO, PLAYLISTS, DOMÓTICA Y MEMORIA */}
                   {settingsSection === "connections" && (
                     <div className="settings-panel">
                       <div className="glass-card-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 5 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
                           <span style={{ fontSize: 10.5, fontWeight: 700, opacity: 0.9 }}>
-                            🛡️ Servidor HomeSOC (MCP · Voz N.O.V.A.)
+                            🔌{" "}
+                            {config.mcpServerName?.trim()
+                              ? `${config.mcpServerName.trim()} (MCP · Voz N.O.V.A.)`
+                              : "Servidor MCP Externo (Software / Homelab)"}
                           </span>
-                          <button
-                            type="button"
-                            className="icon-chip icon-chip--active"
-                            style={{ fontSize: 10 }}
-                            onClick={async () => {
-                              setSubuOpen(true);
-                              setSubuReply("Consultando tu servidor HomeSOC vía MCP...");
-                              const res = await getBridge()
-                                ?.homesoc_mcp_call?.(
-                                  "¿Cómo está mi servidor?",
-                                  config.homesocUrl || "http://localhost:4000/api/v1/mcp",
-                                  config.homesocToken || "",
-                                )
-                                .catch(() => null);
-                              const msg =
-                                res?.textoParaVoz ||
-                                "No pude conectar con HomeSOC. Verifica la URL y el token.";
-                              setSubuReply(msg);
-                              if (res?.ok) playDoneChime(config.hudSounds !== false);
-                              void speakAsSubu(
-                                msg,
-                                config.voiceEnabled !== false,
-                                config.voiceName || "es-MX-JorgeNeural",
-                                () => setSpeaking(true),
-                                () => setSpeaking(false),
-                                config.geminiApiKey || "",
-                              );
-                            }}
-                            title="Prueba la conexión MCP con HomeSOC y escucha la respuesta por voz"
-                          >
-                            ⚡ Probar MCP
-                          </button>
+                          <div style={{ display: "flex", gap: 4 }}>
+                            <button
+                              type="button"
+                              className="icon-chip"
+                              style={{ fontSize: 10 }}
+                              onClick={async () => {
+                                const res = await getBridge()
+                                  ?.mcp_list_tools?.({
+                                    endpointUrl: config.mcpServerUrl || "",
+                                    token: config.mcpServerToken || "",
+                                  })
+                                  .catch(() => null);
+                                if (res?.ok && res.tools?.length) {
+                                  setMcpTools(res.tools);
+                                  playDoneChime(config.hudSounds !== false);
+                                } else {
+                                  setMcpTools([]);
+                                  setSubuOpen(true);
+                                  setSubuReply(res?.error || "No se pudieron listar las tools del servidor MCP.");
+                                }
+                              }}
+                              title="Descubre las herramientas (tools/list) que expone tu servidor MCP"
+                            >
+                              🔍 Tools
+                            </button>
+                            <button
+                              type="button"
+                              className="icon-chip icon-chip--active"
+                              style={{ fontSize: 10 }}
+                              onClick={async () => {
+                                const srvLabel = config.mcpServerName?.trim() || "tu servidor MCP";
+                                setSubuOpen(true);
+                                setSubuReply(`Consultando ${srvLabel} vía MCP...`);
+                                const res = await getBridge()
+                                  ?.mcp_call?.("¿Cómo está mi servidor?", {
+                                    endpointUrl: config.mcpServerUrl || "",
+                                    token: config.mcpServerToken || "",
+                                    toolName: config.mcpToolName || "consultar_asistente_voz",
+                                    serverName: config.mcpServerName || "",
+                                  })
+                                  .catch(() => null);
+                                const msg =
+                                  res?.textoParaVoz ||
+                                  `No pude conectar con ${srvLabel}. Verifica la URL y el token.`;
+                                setSubuReply(msg);
+                                if (res?.ok) playDoneChime(config.hudSounds !== false);
+                                void speakAsSubu(
+                                  msg,
+                                  config.voiceEnabled !== false,
+                                  config.voiceName || "es-MX-JorgeNeural",
+                                  () => setSpeaking(true),
+                                  () => setSpeaking(false),
+                                  config.geminiApiKey || "",
+                                );
+                              }}
+                              title="Prueba la conexión MCP (JSON-RPC 2.0) y escucha la respuesta por voz"
+                            >
+                              ⚡ Probar MCP
+                            </button>
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <input
+                            className="glass-input"
+                            style={{ width: 135, padding: "4px 7px", fontSize: 10.5 }}
+                            value={config.mcpServerName ?? ""}
+                            onChange={(e) =>
+                              setConfig((p) => ({ ...p, mcpServerName: e.target.value }))
+                            }
+                            placeholder="Nombre (ej: Mi Servidor)"
+                            title="Nombre opcional para invocar este servidor por voz"
+                          />
+                          <input
+                            className="glass-input"
+                            style={{ flex: 1, padding: "4px 7px", fontSize: 10.5 }}
+                            value={config.mcpToolName ?? "consultar_asistente_voz"}
+                            onChange={(e) =>
+                              setConfig((p) => ({ ...p, mcpToolName: e.target.value }))
+                            }
+                            placeholder="Tool MCP (ej: consultar_asistente_voz)"
+                            title="Nombre exacto de la herramienta MCP que llamará N.O.V.A. vía tools/call"
+                          />
                         </div>
                         <div style={{ display: "flex", gap: 4 }}>
                           <input
                             className="glass-input"
                             style={{ flex: 1, padding: "4px 7px", fontSize: 10.5 }}
-                            value={config.homesocUrl ?? "http://localhost:4000/api/v1/mcp"}
+                            value={config.mcpServerUrl ?? ""}
                             onChange={(e) =>
-                              setConfig((p) => ({ ...p, homesocUrl: e.target.value }))
+                              setConfig((p) => ({ ...p, mcpServerUrl: e.target.value }))
                             }
-                            placeholder="http://localhost:4000/api/v1/mcp (o IP Tailscale)"
-                            title="Endpoint JSON-RPC 2.0 MCP de tu servidor HomeSOC"
+                            placeholder="URL Endpoint MCP (ej: http://localhost:4000/api/v1/mcp)"
+                            title="Endpoint HTTP/HTTPS JSON-RPC 2.0 de cualquier software o servidor compatible con MCP"
                           />
                           <input
                             type="password"
                             className="glass-input"
-                            style={{ width: 155, padding: "4px 7px", fontSize: 10.5 }}
-                            value={config.homesocToken ?? ""}
+                            style={{ width: 145, padding: "4px 7px", fontSize: 10.5 }}
+                            value={config.mcpServerToken ?? ""}
                             onChange={(e) =>
-                              setConfig((p) => ({ ...p, homesocToken: e.target.value }))
+                              setConfig((p) => ({ ...p, mcpServerToken: e.target.value }))
                             }
-                            placeholder="Token Bearer (HOMESOC_MCP_TOKEN)"
-                            title="Genera este token en HomeSOC → Configuración General → Servidor MCP"
+                            placeholder="Token Bearer (opcional)"
+                            title="Token de autenticación Bearer si tu servidor MCP requiere autorización"
                           />
                         </div>
+                        {mcpTools.length > 0 && (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 2 }}>
+                            {mcpTools.map((t) => (
+                              <button
+                                key={t.name}
+                                type="button"
+                                className={`icon-chip${(config.mcpToolName || "") === t.name ? " icon-chip--active" : ""}`}
+                                style={{ fontSize: 9.5, padding: "2px 6px" }}
+                                title={t.description || t.name}
+                                onClick={() => setConfig((p) => ({ ...p, mcpToolName: t.name }))}
+                              >
+                                🔧 {t.name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
                       <div className="glass-card-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 5 }}>
@@ -4090,7 +4162,7 @@ export default function App() {
                             <option value="open_app" style={{ background: "#0f172a" }}>📱 Abrir App</option>
                             <option value="open_project" style={{ background: "#0f172a" }}>📂 Abrir Proyecto</option>
                             <option value="play_music" style={{ background: "#0f172a" }}>🎵 Reproducir Música</option>
-                            <option value="homesoc_query" style={{ background: "#0f172a" }}>🛡️ Consultar HomeSOC</option>
+                            <option value="mcp_query" style={{ background: "#0f172a" }}>🔌 Consultar Servidor MCP</option>
                             <option value="web_search" style={{ background: "#0f172a" }}>🔍 Buscar en Google</option>
                             <option value="add_todo" style={{ background: "#0f172a" }}>📝 Crear Tarea</option>
                           </select>
@@ -4195,7 +4267,12 @@ export default function App() {
                               ["🎮 Modo Juego", "Nova modo juego"],
                               ["📋 Resumen del día", "Nova dame el resumen del día"],
                               ["⇄ Intercambiar P1↔P2", "Nova intercambia las pantallas"],
-                              ["🛡️ Estado HomeSOC", "Nova cómo está mi servidor"],
+                              [
+                                config.mcpServerName?.trim()
+                                  ? `🔌 Estado ${config.mcpServerName.trim()}`
+                                  : "🔌 Estado Servidor MCP",
+                                "Nova cómo está mi servidor",
+                              ],
                               ["📱 GlassDrop Wi-Fi", "Nova conecta mi celular"],
                             ] as const
                           ).map(([label, cmd]) => (

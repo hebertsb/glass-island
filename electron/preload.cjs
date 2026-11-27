@@ -35,8 +35,8 @@ const api = {
   move_island_display: (targetDisplay) =>
     ipcRenderer.invoke("island:move-island-display", targetDisplay),
   play_playlist: (url, platform) => ipcRenderer.invoke("island:play-playlist", url, platform),
-  homesoc_mcp_call: (pregunta, endpointUrl, token) =>
-    ipcRenderer.invoke("island:homesoc-mcp-call", pregunta, endpointUrl, token),
+  mcp_call: (pregunta, opts) => ipcRenderer.invoke("island:mcp-call", pregunta, opts),
+  mcp_list_tools: (opts) => ipcRenderer.invoke("island:mcp-list-tools", opts),
   close_active_window: () => ipcRenderer.invoke("island:close-active-window"),
   launch: (target) => ipcRenderer.invoke("island:launch", target),
   launch_and_paste: (target, promptText, appLabel) =>

@@ -996,12 +996,12 @@ app.whenReady().then(() => {
     }
   });
 
-  // Cliente JSON-RPC 2.0 MCP para HomeSOC (soporta local http://localhost:4000/api/v1/mcp y Tailscale)
-  ipcMain.handle("island:homesoc-mcp-call", async (_e, pregunta, endpointUrl, token) => {
+  // Cliente genérico JSON-RPC 2.0 MCP (compatible con cualquier servidor/software MCP vía HTTP/HTTPS)
+  ipcMain.handle("island:mcp-call", async (_e, pregunta, opts = {}) => {
     const cleanQ = String(pregunta || "").trim();
     if (!cleanQ) return { ok: false, error: "empty_question" };
 
-    // Resuelve URL y token desde: argumento UI -> config.json -> variable de entorno HOMESOC_MCP_TOKEN
+    // Resuelve configuración desde: argumento UI -> config.json -> variables de entorno MCP_SERVER_*
     let cfg = {};
     try {
       if (fs.existsSync(CONFIG_FILE)) {
@@ -1010,19 +1010,19 @@ app.whenReady().then(() => {
     } catch {
       cfg = {};
     }
-    let rawUrl = String(
-      endpointUrl || cfg.homesocUrl || process.env.HOMESOC_MCP_URL || "http://localhost:4000/api/v1/mcp",
+    const rawUrl = String(
+      opts?.endpointUrl || cfg.mcpServerUrl || process.env.MCP_SERVER_URL || "",
     ).trim();
-    if (rawUrl && !/\/api\/v1\/mcp\/?$/i.test(rawUrl)) {
-      rawUrl = rawUrl.replace(/\/+$/, "") + "/api/v1/mcp";
-    }
-    const authToken = String(token || cfg.homesocToken || process.env.HOMESOC_MCP_TOKEN || "").trim();
-    if (!authToken) {
+    const serverLabel = String(opts?.serverName || cfg.mcpServerName || "").trim() || "tu servidor MCP";
+    const toolName = String(opts?.toolName || cfg.mcpToolName || "consultar_asistente_voz").trim();
+    const authToken = String(opts?.token || cfg.mcpServerToken || process.env.MCP_SERVER_TOKEN || "").trim();
+
+    if (!rawUrl) {
       return {
         ok: false,
-        error: "missing_token",
+        error: "missing_url",
         textoParaVoz:
-          "Todavía no configuraste tu token de HomeSOC. Pégalo en Ajustes, pestaña Nova e IA, en la sección Servidor HomeSOC.",
+          "Todavía no configuraste la URL de tu servidor MCP. Agrégala en Ajustes, pestaña Conexiones, en la sección Servidor MCP Externo.",
       };
     }
 
@@ -1030,25 +1030,31 @@ app.whenReady().then(() => {
       try {
         const parsedUrl = new URL(rawUrl);
         const mod = parsedUrl.protocol === "https:" ? https : require("http");
+        const toolArgs =
+          toolName === "consultar_asistente_voz"
+            ? { pregunta: cleanQ }
+            : { pregunta: cleanQ, query: cleanQ };
         const body = JSON.stringify({
           jsonrpc: "2.0",
           id: Date.now(),
           method: "tools/call",
           params: {
-            name: "consultar_asistente_voz",
-            arguments: { pregunta: cleanQ },
+            name: toolName,
+            arguments: toolArgs,
           },
         });
+        const headers = {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(body),
+        };
+        if (authToken) headers.Authorization = `Bearer ${authToken}`;
+
         const req = mod.request(
           parsedUrl,
           {
             method: "POST",
             timeout: 9000,
-            headers: {
-              "Content-Type": "application/json",
-              "Content-Length": Buffer.byteLength(body),
-              Authorization: `Bearer ${authToken}`,
-            },
+            headers,
           },
           (res) => {
             const statusCode = res.statusCode || 0;
@@ -1063,8 +1069,8 @@ app.whenReady().then(() => {
                   error: "unauthorized",
                   textoParaVoz:
                     statusCode === 403
-                      ? "Tu token de HomeSOC no tiene permiso de escritura para esa acción."
-                      : "El token de HomeSOC fue rechazado. Revísalo en Ajustes, Nova e IA.",
+                      ? `Tu token de ${serverLabel} no tiene permiso de escritura para esa acción.`
+                      : `El token de ${serverLabel} fue rechazado o falta configurarlo en Ajustes, Conexiones.`,
                 });
                 return;
               }
@@ -1075,7 +1081,7 @@ app.whenReady().then(() => {
                     ok: false,
                     statusCode,
                     error: String(j.error.message),
-                    textoParaVoz: `HomeSOC respondió con un aviso: ${j.error.message}`,
+                    textoParaVoz: `${serverLabel} respondió con un aviso: ${j.error.message}`,
                   });
                   return;
                 }
@@ -1107,7 +1113,7 @@ app.whenReady().then(() => {
                   resolve({
                     ok: statusCode >= 200 && statusCode < 300,
                     statusCode,
-                    textoParaVoz: "HomeSOC respondió correctamente, pero no envió texto para leer.",
+                    textoParaVoz: `${serverLabel} respondió correctamente, pero no envió texto para leer.`,
                   });
                 }
               } catch {
@@ -1115,7 +1121,7 @@ app.whenReady().then(() => {
                   ok: false,
                   statusCode,
                   error: "invalid_json",
-                  textoParaVoz: "No pude leer la respuesta del servidor HomeSOC.",
+                  textoParaVoz: `No pude leer la respuesta de ${serverLabel}.`,
                 });
               }
             });
@@ -1125,7 +1131,7 @@ app.whenReady().then(() => {
           resolve({
             ok: false,
             error: "unreachable",
-            textoParaVoz: "No pude conectarme con tu servidor HomeSOC. Verifica que esté encendido y accesible.",
+            textoParaVoz: `No pude conectarme con ${serverLabel}. Verifica que esté encendido y accesible.`,
           }),
         );
         req.on("timeout", () => {
@@ -1133,7 +1139,7 @@ app.whenReady().then(() => {
           resolve({
             ok: false,
             error: "timeout",
-            textoParaVoz: "El servidor HomeSOC tardó demasiado en responder.",
+            textoParaVoz: `${serverLabel} tardó demasiado en responder.`,
           });
         });
         req.write(body);
@@ -1142,8 +1148,69 @@ app.whenReady().then(() => {
         resolve({
           ok: false,
           error: "invalid_url",
-          textoParaVoz: "La URL del servidor HomeSOC en Ajustes no es válida.",
+          textoParaVoz: "La URL del servidor MCP en Ajustes no es válida.",
         });
+      }
+    });
+  });
+
+  // Descubrimiento estándar MCP (`tools/list`) para conectar cualquier software externo con MCP
+  ipcMain.handle("island:mcp-list-tools", async (_e, opts = {}) => {
+    let cfg = {};
+    try {
+      if (fs.existsSync(CONFIG_FILE)) {
+        cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, "utf8").replace(/^\uFEFF/, ""));
+      }
+    } catch {
+      cfg = {};
+    }
+    const rawUrl = String(opts?.endpointUrl || cfg.mcpServerUrl || process.env.MCP_SERVER_URL || "").trim();
+    const authToken = String(opts?.token || cfg.mcpServerToken || process.env.MCP_SERVER_TOKEN || "").trim();
+    if (!rawUrl) return { ok: false, error: "Configura primero la URL MCP." };
+
+    return await new Promise((resolve) => {
+      try {
+        const parsedUrl = new URL(rawUrl);
+        const mod = parsedUrl.protocol === "https:" ? https : require("http");
+        const body = JSON.stringify({
+          jsonrpc: "2.0",
+          id: Date.now(),
+          method: "tools/list",
+          params: {},
+        });
+        const headers = {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(body),
+        };
+        if (authToken) headers.Authorization = `Bearer ${authToken}`;
+        const req = mod.request(parsedUrl, { method: "POST", timeout: 7000, headers }, (res) => {
+          let raw = "";
+          res.setEncoding("utf8");
+          res.on("data", (c) => (raw += c));
+          res.on("end", () => {
+            try {
+              const j = JSON.parse(raw);
+              const list = Array.isArray(j?.result?.tools)
+                ? j.result.tools.map((t) => ({
+                    name: String(t?.name || ""),
+                    description: String(t?.description || ""),
+                  })).filter((t) => t.name)
+                : [];
+              resolve({ ok: list.length > 0, tools: list, error: list.length ? undefined : (j?.error?.message || "Sin tools") });
+            } catch {
+              resolve({ ok: false, error: "Respuesta JSON inválida" });
+            }
+          });
+        });
+        req.on("error", () => resolve({ ok: false, error: "Servidor MCP inaccesible" }));
+        req.on("timeout", () => {
+          req.destroy();
+          resolve({ ok: false, error: "Tiempo agotado" });
+        });
+        req.write(body);
+        req.end();
+      } catch {
+        resolve({ ok: false, error: "URL inválida" });
       }
     });
   });
@@ -1694,7 +1761,7 @@ app.whenReady().then(() => {
       `- create_project (arg: nombre de la carpeta/proyecto nuevo a crear y abrir en VS Code; platform: proyectos_personales|escritorio|universidad|documentos)\n` +
       `- modo_programacion | modo_proyecto | modo_semana | modo_casa | modo_universidad | modo_descanso | briefing\n` +
       `- smart_home (arg: lights_on|lights_off)\n` +
-      `- homesoc_query (arg: pregunta o acción sobre el servidor HomeSOC / homelab / contenedores Docker / alertas de seguridad / despliegues)\n` +
+      `- mcp_query (arg: pregunta o acción para el servidor MCP externo configurado: estado del servidor, homelab, contenedores Docker, alertas, despliegues o software conectado vía MCP)\n` +
       `- control_media (arg: play_pause|next|prev|vol_up|vol_down|vol_mute)\n` +
       `- set_brightness (level: 10..100)\n` +
       `- start_focus (level: minutos 5..60)\n` +

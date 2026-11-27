@@ -257,11 +257,17 @@ export async function executeNovaTool(
   if (tool === "smart_home") {
     return await executeSubuCommand(cleanArg === "lights_off" ? "apaga las luces" : "prende las luces", ctx, true);
   }
-  if (tool === "homesoc_query") {
-    const res = await api?.homesoc_mcp_call?.(cleanArg, ctx.homesocUrl, ctx.homesocToken);
+  if (tool === "mcp_query") {
+    const mcpLabel = (ctx.mcpServerName || "").trim() || "tu servidor MCP";
+    const res = await api?.mcp_call?.(cleanArg, {
+      endpointUrl: ctx.mcpServerUrl,
+      token: ctx.mcpServerToken,
+      toolName: ctx.mcpToolName,
+      serverName: ctx.mcpServerName,
+    });
     return {
       ok: Boolean(res?.ok),
-      reply: res?.textoParaVoz || `No pude consultar HomeSOC en este momento, ${boss}.`,
+      reply: res?.textoParaVoz || `No pude consultar ${mcpLabel} en este momento, ${boss}.`,
     };
   }
   if (tool === "custom_macro") {
@@ -345,8 +351,10 @@ export interface SubuContext {
   setModePlaylist?: (mode: "coding" | "relax" | "home", playlistId: string) => void;
   setGlassDropUrl?: (url: string | null) => void;
   smartHomeWebhook?: string;
-  homesocUrl?: string;
-  homesocToken?: string;
+  mcpServerName?: string;
+  mcpServerUrl?: string;
+  mcpToolName?: string;
+  mcpServerToken?: string;
   personalityMode?: PersonalityMode;
   acousticTone?: "urgent" | "calm" | "normal";
   aiBrainEnabled?: boolean;
@@ -664,14 +672,20 @@ export async function executeSubuCommand(
   ) {
     const pending = consumePendingConfirm();
     if (pending) {
-      if (pending.kind === "homesoc_action") {
-        const res = await api?.homesoc_mcp_call?.(pending.target, ctx.homesocUrl, ctx.homesocToken);
+      if (pending.kind === "mcp_action") {
+        const mcpLabel = (ctx.mcpServerName || "").trim() || "tu servidor MCP";
+        const res = await api?.mcp_call?.(pending.target, {
+          endpointUrl: ctx.mcpServerUrl,
+          token: ctx.mcpServerToken,
+          toolName: ctx.mcpToolName,
+          serverName: ctx.mcpServerName,
+        });
         const reply =
           res?.textoParaVoz ||
           (res?.ok
-            ? `Aprobado, ${boss}. Acción ejecutada en HomeSOC.`
-            : `No pude ejecutar esa acción en HomeSOC, ${boss}.`);
-        pushContextTurn("assistant", reply, "homesoc_query", pending.target);
+            ? `Aprobado, ${boss}. Acción ejecutada en ${mcpLabel}.`
+            : `No pude ejecutar esa acción en ${mcpLabel}, ${boss}.`);
+        pushContextTurn("assistant", reply, "mcp_query", pending.target);
         return { ok: Boolean(res?.ok), reply };
       }
       if (pending.kind === "system_action") {
@@ -1080,34 +1094,47 @@ export async function executeSubuCommand(
     };
   }
 
-  // 0e1e. Tool: Servidor HomeSOC vía JSON-RPC 2.0 MCP (consultar estado, contenedores, alertas, seguridad o redeploy con HITL)
-  const isHomeSocQuery =
-    /\b(?:homesoc|home\s+soc|homelab|mi\s+servidor|el\s+servidor|estado\s+del\s+servidor|contenedores?|contenedor|despliegues?|redeploy|redesplegar|seguridad\s+del\s+servidor|resumen\s+de\s+seguridad|alertas?\s+de\s+seguridad|alertas?\s+del\s+servidor|auditoria\s+del\s+servidor|servicios?\s+del\s+servidor|servicios?\s+desplegados)\b/.test(
+  // 0e1e. Tool: Cliente MCP Externo vía JSON-RPC 2.0 (servidor, homelab o software conectado con MCP)
+  const mcpLabel = (ctx.mcpServerName || "").trim() || "tu servidor MCP";
+  const customMcpNorm = norm(ctx.mcpServerName || "");
+  const mentionsCustomMcp =
+    customMcpNorm.length >= 3 &&
+    (q.includes(customMcpNorm) ||
+      q.includes(customMcpNorm.replace(/\s+/g, ""))) &&
+    !/^(?:abre|abrir|abreme|abrime)\s+/.test(q);
+  const isMcpQuery =
+    mentionsCustomMcp ||
+    (/\b(?:servidor\s+mcp|consulta\s+al\s+mcp|pregunta\s+al\s+mcp|homelab|mi\s+servidor|el\s+servidor|estado\s+del\s+servidor|contenedores?|contenedor|despliegues?|redeploy|redesplegar|seguridad\s+del\s+servidor|resumen\s+de\s+seguridad|alertas?\s+de\s+seguridad|alertas?\s+del\s+servidor|auditoria\s+del\s+servidor|servicios?\s+del\s+servidor|servicios?\s+desplegados)\b/.test(
       q,
-    ) && !/^(?:abre|abrir|abreme|abrime)\s+(?:docker|homesoc)\b/.test(q);
-  if (isHomeSocQuery) {
+    ) && !/^(?:abre|abrir|abreme|abrime)\s+docker\b/.test(q));
+  if (isMcpQuery) {
     const isWriteAction = /\b(?:redeploy|redesplegar|redespliega|reinicia|reiniciar|deten|detener|apaga|apagar|para|parar|elimina|eliminar|borra|borrar|inicia|iniciar|levanta|levantar)\b/.test(
       q,
     );
-    // Patrón 09 · Human-in-the-Loop: cualquier operación de escritura en el servidor pide confirmación humana
+    // Patrón 09 · Human-in-the-Loop: cualquier operación de escritura en el servidor MCP pide confirmación humana
     if (isWriteAction && !/\b(?:confirmado|confirmar|forzar|sin preguntar)\b/.test(q)) {
       setPendingConfirm({
-        kind: "homesoc_action",
+        kind: "mcp_action",
         target: original,
-        label: `ejecutar en HomeSOC: "${q}"`,
+        label: `ejecutar en ${mcpLabel}: "${q}"`,
         at: Date.now(),
       });
       return {
         ok: true,
         keepOpen: true,
-        reply: `${boss}, acción de escritura en HomeSOC (nivel Aprobar): ¿confirmas que ejecute "${q}"? Di "sí" o "aprobar".`,
+        reply: `${boss}, acción de escritura en ${mcpLabel} (nivel Aprobar): ¿confirmas que ejecute "${q}"? Di "sí" o "aprobar".`,
       };
     }
-    const res = await api?.homesoc_mcp_call?.(original, ctx.homesocUrl, ctx.homesocToken);
+    const res = await api?.mcp_call?.(original, {
+      endpointUrl: ctx.mcpServerUrl,
+      token: ctx.mcpServerToken,
+      toolName: ctx.mcpToolName,
+      serverName: ctx.mcpServerName,
+    });
     const reply =
       res?.textoParaVoz ||
-      `No pude comunicarme con tu servidor HomeSOC, ${boss}.`;
-    pushContextTurn("assistant", reply, "homesoc_query", q);
+      `No pude comunicarme con ${mcpLabel}, ${boss}.`;
+    pushContextTurn("assistant", reply, "mcp_query", q);
     return { ok: Boolean(res?.ok), reply };
   }
 
@@ -2262,12 +2289,17 @@ export async function executeSubuCommand(
           await executeSubuCommand("resumen del dia", ctx, true);
         } else if (t === "smart_home") {
           await executeSubuCommand(a === "lights_off" ? "apaga las luces" : "prende las luces", ctx, true);
-        } else if (t === "homesoc_query") {
-          const r = await api.homesoc_mcp_call?.(a || original, ctx.homesocUrl, ctx.homesocToken);
+        } else if (t === "mcp_query") {
+          const r = await api.mcp_call?.(a || original, {
+            endpointUrl: ctx.mcpServerUrl,
+            token: ctx.mcpServerToken,
+            toolName: ctx.mcpToolName,
+            serverName: ctx.mcpServerName,
+          });
           if (r?.ok && r.textoParaVoz) {
             return { ok: true, reply: r.textoParaVoz };
           }
-          if (!r?.ok) failedObservations.push(r?.textoParaVoz || "no pude consultar HomeSOC");
+          if (!r?.ok) failedObservations.push(r?.textoParaVoz || "no pude consultar el servidor MCP");
         } else if (t === "control_media" && a) {
           await api.media_control(a);
         } else if (t === "set_brightness" && typeof act.level === "number") {
