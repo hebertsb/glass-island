@@ -3947,8 +3947,8 @@ export default function App() {
                             onChange={(e) =>
                               setConfig((p) => ({ ...p, mcpServerUrl: e.target.value }))
                             }
-                            placeholder="URL Endpoint MCP (ej: http://localhost:4000/api/v1/mcp)"
-                            title="Endpoint HTTP/HTTPS JSON-RPC 2.0 de cualquier software o servidor compatible con MCP"
+                            placeholder="URL Endpoint MCP desplegada (ej: https://tu-servidor.com/api/v1/mcp)"
+                            title="Endpoint HTTP/HTTPS desplegado (JSON-RPC 2.0 / Streamable HTTP) de tu software o servidor MCP"
                           />
                           <input
                             type="password"

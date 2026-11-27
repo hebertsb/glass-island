@@ -996,7 +996,18 @@ app.whenReady().then(() => {
     }
   });
 
-  // Cliente genérico JSON-RPC 2.0 MCP (compatible con cualquier servidor/software MCP vía HTTP/HTTPS)
+  // Helper para normalizar URLs MCP desplegadas (soporta https://, Cloudflare/Tailscale/Caddy y dominios sin esquema)
+  const normalizeMcpUrl = (input) => {
+    let u = String(input || "").trim();
+    if (!u) return "";
+    if (!/^https?:\/\//i.test(u)) {
+      const isLocal = /^(?:localhost|127\.0\.0\.1|10\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.|100\.)/i.test(u);
+      u = `${isLocal ? "http" : "https"}://${u}`;
+    }
+    return u;
+  };
+
+  // Cliente genérico JSON-RPC 2.0 MCP (soporta URLs desplegadas HTTPS/HTTP, redirecciones y Bearer opcional)
   ipcMain.handle("island:mcp-call", async (_e, pregunta, opts = {}) => {
     const cleanQ = String(pregunta || "").trim();
     if (!cleanQ) return { ok: false, error: "empty_question" };
@@ -1010,9 +1021,9 @@ app.whenReady().then(() => {
     } catch {
       cfg = {};
     }
-    const rawUrl = String(
+    const rawUrl = normalizeMcpUrl(
       opts?.endpointUrl || cfg.mcpServerUrl || process.env.MCP_SERVER_URL || "",
-    ).trim();
+    );
     const serverLabel = String(opts?.serverName || cfg.mcpServerName || "").trim() || "tu servidor MCP";
     const toolName = String(opts?.toolName || cfg.mcpToolName || "consultar_asistente_voz").trim();
     const authToken = String(opts?.token || cfg.mcpServerToken || process.env.MCP_SERVER_TOKEN || "").trim();
@@ -1022,19 +1033,37 @@ app.whenReady().then(() => {
         ok: false,
         error: "missing_url",
         textoParaVoz:
-          "Todavía no configuraste la URL de tu servidor MCP. Agrégala en Ajustes, pestaña Conexiones, en la sección Servidor MCP Externo.",
+          "Todavía no configuraste la URL desplegada de tu servidor MCP. Agrégala en Ajustes, pestaña Conexiones, en Servidor MCP Externo.",
       };
     }
 
-    return await new Promise((resolve) => {
-      try {
-        const parsedUrl = new URL(rawUrl);
-        const mod = parsedUrl.protocol === "https:" ? https : require("http");
-        const toolArgs =
-          toolName === "consultar_asistente_voz"
-            ? { pregunta: cleanQ }
-            : { pregunta: cleanQ, query: cleanQ };
-        const body = JSON.stringify({
+    try {
+      new URL(rawUrl);
+    } catch {
+      return {
+        ok: false,
+        error: "invalid_url",
+        textoParaVoz: "La URL del servidor MCP en Ajustes no es válida.",
+      };
+    }
+
+    try {
+      const toolArgs =
+        toolName === "consultar_asistente_voz"
+          ? { pregunta: cleanQ }
+          : { pregunta: cleanQ, query: cleanQ };
+      const headers = {
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+      };
+      if (authToken) headers.Authorization = `Bearer ${authToken}`;
+
+      const res = await fetch(rawUrl, {
+        method: "POST",
+        redirect: "follow",
+        signal: AbortSignal.timeout(12000),
+        headers,
+        body: JSON.stringify({
           jsonrpc: "2.0",
           id: Date.now(),
           method: "tools/call",
@@ -1042,116 +1071,90 @@ app.whenReady().then(() => {
             name: toolName,
             arguments: toolArgs,
           },
-        });
-        const headers = {
-          "Content-Type": "application/json",
-          "Content-Length": Buffer.byteLength(body),
-        };
-        if (authToken) headers.Authorization = `Bearer ${authToken}`;
-
-        const req = mod.request(
-          parsedUrl,
-          {
-            method: "POST",
-            timeout: 9000,
-            headers,
-          },
-          (res) => {
-            const statusCode = res.statusCode || 0;
-            let raw = "";
-            res.setEncoding("utf8");
-            res.on("data", (c) => (raw += c));
-            res.on("end", () => {
-              if (statusCode === 401 || statusCode === 403) {
-                resolve({
-                  ok: false,
-                  statusCode,
-                  error: "unauthorized",
-                  textoParaVoz:
-                    statusCode === 403
-                      ? `Tu token de ${serverLabel} no tiene permiso de escritura para esa acción.`
-                      : `El token de ${serverLabel} fue rechazado o falta configurarlo en Ajustes, Conexiones.`,
-                });
-                return;
-              }
-              try {
-                const j = JSON.parse(raw);
-                if (j?.error?.message) {
-                  resolve({
-                    ok: false,
-                    statusCode,
-                    error: String(j.error.message),
-                    textoParaVoz: `${serverLabel} respondió con un aviso: ${j.error.message}`,
-                  });
-                  return;
-                }
-                const result = j?.result ?? j;
-                let spoken = "";
-                if (typeof result?.textoParaVoz === "string" && result.textoParaVoz.trim()) {
-                  spoken = result.textoParaVoz.trim();
-                } else if (Array.isArray(result?.content)) {
-                  const firstTxt = result.content.find((c) => typeof c?.text === "string")?.text || "";
-                  if (firstTxt.trim().startsWith("{")) {
-                    try {
-                      const inner = JSON.parse(firstTxt);
-                      spoken = String(inner?.textoParaVoz || inner?.respuesta || inner?.message || firstTxt).trim();
-                    } catch {
-                      spoken = firstTxt.trim();
-                    }
-                  } else {
-                    spoken = firstTxt.trim();
-                  }
-                } else if (typeof result?.structuredContent?.textoParaVoz === "string") {
-                  spoken = result.structuredContent.textoParaVoz.trim();
-                } else if (typeof result === "string") {
-                  spoken = result.trim();
-                }
-
-                if (spoken) {
-                  resolve({ ok: true, statusCode, textoParaVoz: spoken });
-                } else {
-                  resolve({
-                    ok: statusCode >= 200 && statusCode < 300,
-                    statusCode,
-                    textoParaVoz: `${serverLabel} respondió correctamente, pero no envió texto para leer.`,
-                  });
-                }
-              } catch {
-                resolve({
-                  ok: false,
-                  statusCode,
-                  error: "invalid_json",
-                  textoParaVoz: `No pude leer la respuesta de ${serverLabel}.`,
-                });
-              }
-            });
-          },
-        );
-        req.on("error", () =>
-          resolve({
-            ok: false,
-            error: "unreachable",
-            textoParaVoz: `No pude conectarme con ${serverLabel}. Verifica que esté encendido y accesible.`,
-          }),
-        );
-        req.on("timeout", () => {
-          req.destroy();
-          resolve({
-            ok: false,
-            error: "timeout",
-            textoParaVoz: `${serverLabel} tardó demasiado en responder.`,
-          });
-        });
-        req.write(body);
-        req.end();
-      } catch {
-        resolve({
+        }),
+      });
+      const statusCode = res.status;
+      if (statusCode === 401 || statusCode === 403) {
+        return {
           ok: false,
-          error: "invalid_url",
-          textoParaVoz: "La URL del servidor MCP en Ajustes no es válida.",
-        });
+          statusCode,
+          error: "unauthorized",
+          textoParaVoz:
+            statusCode === 403
+              ? `Tu token de ${serverLabel} no tiene permiso de escritura para esa acción.`
+              : `El token de ${serverLabel} fue rechazado o falta configurarlo en Ajustes, Conexiones.`,
+        };
       }
-    });
+      const raw = await res.text();
+      // Soporta tanto JSON directo como Streamable HTTP / SSE (`data: {...}`)
+      let jsonStr = raw.trim();
+      if (/^event:|^data:/m.test(jsonStr)) {
+        const dataLines = jsonStr
+          .split(/\r?\n/)
+          .filter((l) => l.startsWith("data:"))
+          .map((l) => l.slice(5).trim())
+          .filter((l) => l && l !== "[DONE]");
+        if (dataLines.length > 0) jsonStr = dataLines[dataLines.length - 1];
+      }
+      let j;
+      try {
+        j = JSON.parse(jsonStr);
+      } catch {
+        return {
+          ok: false,
+          statusCode,
+          error: "invalid_json",
+          textoParaVoz: `No pude leer la respuesta de ${serverLabel} (HTTP ${statusCode}).`,
+        };
+      }
+      if (j?.error?.message) {
+        return {
+          ok: false,
+          statusCode,
+          error: String(j.error.message),
+          textoParaVoz: `${serverLabel} respondió con un aviso: ${j.error.message}`,
+        };
+      }
+      const result = j?.result ?? j;
+      let spoken = "";
+      if (typeof result?.textoParaVoz === "string" && result.textoParaVoz.trim()) {
+        spoken = result.textoParaVoz.trim();
+      } else if (Array.isArray(result?.content)) {
+        const firstTxt = result.content.find((c) => typeof c?.text === "string")?.text || "";
+        if (firstTxt.trim().startsWith("{")) {
+          try {
+            const inner = JSON.parse(firstTxt);
+            spoken = String(inner?.textoParaVoz || inner?.respuesta || inner?.message || firstTxt).trim();
+          } catch {
+            spoken = firstTxt.trim();
+          }
+        } else {
+          spoken = firstTxt.trim();
+        }
+      } else if (typeof result?.structuredContent?.textoParaVoz === "string") {
+        spoken = result.structuredContent.textoParaVoz.trim();
+      } else if (typeof result === "string") {
+        spoken = result.trim();
+      }
+
+      if (spoken) {
+        return { ok: true, statusCode, textoParaVoz: spoken };
+      }
+      return {
+        ok: statusCode >= 200 && statusCode < 300,
+        statusCode,
+        textoParaVoz: `${serverLabel} respondió correctamente, pero no envió texto para leer.`,
+      };
+    } catch (err) {
+      const isTimeout = err?.name === "TimeoutError" || err?.name === "AbortError";
+      return {
+        ok: false,
+        error: isTimeout ? "timeout" : "unreachable",
+        textoParaVoz: isTimeout
+          ? `${serverLabel} tardó demasiado en responder.`
+          : `No pude conectarme con ${serverLabel}. Verifica la URL desplegada y tu conexión.`,
+      };
+    }
   });
 
   // Descubrimiento estándar MCP (`tools/list`) para conectar cualquier software externo con MCP
@@ -1164,55 +1167,64 @@ app.whenReady().then(() => {
     } catch {
       cfg = {};
     }
-    const rawUrl = String(opts?.endpointUrl || cfg.mcpServerUrl || process.env.MCP_SERVER_URL || "").trim();
+    const rawUrl = normalizeMcpUrl(
+      opts?.endpointUrl || cfg.mcpServerUrl || process.env.MCP_SERVER_URL || "",
+    );
     const authToken = String(opts?.token || cfg.mcpServerToken || process.env.MCP_SERVER_TOKEN || "").trim();
-    if (!rawUrl) return { ok: false, error: "Configura primero la URL MCP." };
+    if (!rawUrl) return { ok: false, error: "Configura primero la URL desplegada del servidor MCP." };
 
-    return await new Promise((resolve) => {
-      try {
-        const parsedUrl = new URL(rawUrl);
-        const mod = parsedUrl.protocol === "https:" ? https : require("http");
-        const body = JSON.stringify({
+    try {
+      new URL(rawUrl);
+    } catch {
+      return { ok: false, error: "URL MCP inválida" };
+    }
+
+    try {
+      const headers = {
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+      };
+      if (authToken) headers.Authorization = `Bearer ${authToken}`;
+      const res = await fetch(rawUrl, {
+        method: "POST",
+        redirect: "follow",
+        signal: AbortSignal.timeout(9000),
+        headers,
+        body: JSON.stringify({
           jsonrpc: "2.0",
           id: Date.now(),
           method: "tools/list",
           params: {},
-        });
-        const headers = {
-          "Content-Type": "application/json",
-          "Content-Length": Buffer.byteLength(body),
-        };
-        if (authToken) headers.Authorization = `Bearer ${authToken}`;
-        const req = mod.request(parsedUrl, { method: "POST", timeout: 7000, headers }, (res) => {
-          let raw = "";
-          res.setEncoding("utf8");
-          res.on("data", (c) => (raw += c));
-          res.on("end", () => {
-            try {
-              const j = JSON.parse(raw);
-              const list = Array.isArray(j?.result?.tools)
-                ? j.result.tools.map((t) => ({
-                    name: String(t?.name || ""),
-                    description: String(t?.description || ""),
-                  })).filter((t) => t.name)
-                : [];
-              resolve({ ok: list.length > 0, tools: list, error: list.length ? undefined : (j?.error?.message || "Sin tools") });
-            } catch {
-              resolve({ ok: false, error: "Respuesta JSON inválida" });
-            }
-          });
-        });
-        req.on("error", () => resolve({ ok: false, error: "Servidor MCP inaccesible" }));
-        req.on("timeout", () => {
-          req.destroy();
-          resolve({ ok: false, error: "Tiempo agotado" });
-        });
-        req.write(body);
-        req.end();
-      } catch {
-        resolve({ ok: false, error: "URL inválida" });
+        }),
+      });
+      const raw = await res.text();
+      let jsonStr = raw.trim();
+      if (/^event:|^data:/m.test(jsonStr)) {
+        const dataLines = jsonStr
+          .split(/\r?\n/)
+          .filter((l) => l.startsWith("data:"))
+          .map((l) => l.slice(5).trim())
+          .filter((l) => l && l !== "[DONE]");
+        if (dataLines.length > 0) jsonStr = dataLines[dataLines.length - 1];
       }
-    });
+      const j = JSON.parse(jsonStr);
+      const list = Array.isArray(j?.result?.tools)
+        ? j.result.tools
+            .map((t) => ({
+              name: String(t?.name || ""),
+              description: String(t?.description || ""),
+            }))
+            .filter((t) => t.name)
+        : [];
+      return {
+        ok: list.length > 0,
+        tools: list,
+        error: list.length ? undefined : j?.error?.message || `Sin tools (HTTP ${res.status})`,
+      };
+    } catch (err) {
+      const isTimeout = err?.name === "TimeoutError" || err?.name === "AbortError";
+      return { ok: false, error: isTimeout ? "Tiempo agotado" : "Servidor MCP inaccesible" };
+    }
   });
 
   // Cierra la ventana activa (excluyendo GlassIsland) para "cierra esta ventana" / "cierra esto"
