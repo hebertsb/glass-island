@@ -112,6 +112,27 @@ export async function deleteNovaPattern(phrase: string): Promise<void> {
   await getBridge()?.kb_save(cachedKb).catch(() => {});
 }
 
+export async function updateNovaPattern(
+  oldPhrase: string,
+  newPhrase: string,
+  tool: NovaToolId,
+  arg: string,
+): Promise<void> {
+  const cleanOld = norm(oldPhrase);
+  const cleanNew = norm(newPhrase);
+  if (!cleanNew) return;
+  cachedKb.patterns = cachedKb.patterns.filter((p) => norm(p.phrase) !== cleanOld && norm(p.phrase) !== cleanNew);
+  cachedKb.patterns.unshift({
+    phrase: cleanNew,
+    tool,
+    arg: arg.trim(),
+    hits: 2,
+    updatedAt: Date.now(),
+  });
+  trainDecisionTree(cachedKb);
+  await getBridge()?.kb_save(cachedKb).catch(() => {});
+}
+
 export async function teachNovaPattern(
   phrase: string,
   tool: NovaToolId,

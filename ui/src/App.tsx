@@ -55,6 +55,7 @@ import {
   speakAsSubu,
   teachNovaAlias,
   teachNovaPattern,
+  updateNovaPattern,
   VOICE_PROFILES,
   type FolderChoice,
 } from "./utils/subuCommands";
@@ -72,6 +73,7 @@ import {
   type IslandConfig,
   type IslandShape,
   type ModuleId,
+  type NovaToolId,
   type NowPlayingData,
   type PlaylistItem,
   type RobotMood,
@@ -455,7 +457,7 @@ export default function App() {
   const [expanded, setExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<ModuleId | `app:${string}`>("home");
   const [settingsSection, setSettingsSection] = useState<
-    "nova" | "connections" | "design" | "apps" | "home" | "shortcuts" | "dock"
+    "nova" | "connections" | "routines" | "design" | "apps" | "home" | "shortcuts" | "dock"
   >("nova");
   const [clock, setClock] = useState(() => new Date());
   const [weather, setWeather] = useState<WeatherData>({
@@ -606,6 +608,10 @@ export default function App() {
   const [newTodoText, setNewTodoText] = useState("");
   const [newPlName, setNewPlName] = useState("");
   const [newPlUrl, setNewPlUrl] = useState("");
+  const [editOrigPhrase, setEditOrigPhrase] = useState<string | null>(null);
+  const [editPhrase, setEditPhrase] = useState("");
+  const [editTool, setEditTool] = useState<NovaToolId>("custom_macro");
+  const [editArg, setEditArg] = useState("");
 
   const dragRef = useRef<{ active: boolean; lastX: number; lastY: number }>({
     active: false,
@@ -3590,6 +3596,7 @@ export default function App() {
                       [
                         ["nova", "🎙️ Nova & IA"],
                         ["connections", "🔌 Conexiones"],
+                        ["routines", "🧠 Rutinas"],
                         ["design", "🎨 Diseño"],
                         ["apps", `📱 Apps (${installedApps.length || "…"})`],
                         ["home", "🏠 Home"],
@@ -4036,51 +4043,174 @@ export default function App() {
                           title="URL webhook opcional para controlar tus luces por voz"
                         />
                       </div>
+                    </div>
+                  )}
 
-                      {kbLearnedCount > 0 && (
-                        <div className="glass-card-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 4 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                            <span style={{ fontSize: 10.5, fontWeight: 700, opacity: 0.85 }}>
-                              🧠 Rutinas en memoria ({getNovaKbPatterns().length})
-                            </span>
-                            <span style={{ fontSize: 9.5, opacity: 0.65 }}>
-                              Di &quot;Nova recuerda que ... es ...&quot;
-                            </span>
-                          </div>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, maxHeight: 58, overflowY: "auto" }}>
-                            {getNovaKbPatterns().map((pat) => (
-                              <span
-                                key={pat.phrase}
-                                className="icon-chip"
-                                style={{ fontSize: 10, padding: "2px 7px", gap: 5 }}
-                                title={`${pat.tool}: ${pat.arg}`}
-                              >
-                                {pat.phrase}
-                                <button
-                                  type="button"
-                                  style={{
-                                    background: "none",
-                                    border: "none",
-                                    color: "inherit",
-                                    cursor: "pointer",
-                                    padding: 0,
-                                    opacity: 0.75,
-                                    fontSize: 10,
-                                  }}
-                                  title="Olvidar rutina"
-                                  onClick={() => {
-                                    void deleteNovaPattern(pat.phrase).then(() =>
-                                      setKbLearnedCount(getNovaKbStats().learnedCount),
-                                    );
-                                  }}
-                                >
-                                  ✕
-                                </button>
-                              </span>
-                            ))}
-                          </div>
+                  {/* SECCIÓN 1C: EDITOR DE RUTINAS EN MEMORIA + CATÁLOGO DE TOOLS INTEGRADAS */}
+                  {settingsSection === "routines" && (
+                    <div className="settings-panel">
+                      <div className="glass-card-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 5 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ fontSize: 10.5, fontWeight: 700, opacity: 0.9 }}>
+                            {editOrigPhrase ? `✏️ Editando: "${editOrigPhrase}"` : "➕ Crear o editar rutina / comando"}
+                          </span>
+                          {editOrigPhrase && (
+                            <button
+                              type="button"
+                              className="icon-chip"
+                              style={{ fontSize: 9.5, padding: "2px 6px" }}
+                              onClick={() => {
+                                setEditOrigPhrase(null);
+                                setEditPhrase("");
+                                setEditArg("");
+                                setEditTool("custom_macro");
+                              }}
+                            >
+                              Cancelar
+                            </button>
+                          )}
                         </div>
-                      )}
+                        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                          <input
+                            className="glass-input"
+                            style={{ width: 145, padding: "4px 7px", fontSize: 10.5 }}
+                            value={editPhrase}
+                            onChange={(e) => setEditPhrase(e.target.value)}
+                            placeholder="Frase (ej: modo defensa)"
+                            title="Lo que le dirás a Nova por voz"
+                          />
+                          <select
+                            className="glass-input"
+                            style={{ width: 122, padding: "4px 6px", fontSize: 10.5 }}
+                            value={editTool}
+                            onChange={(e) => setEditTool(e.target.value as NovaToolId)}
+                            title="Tipo de herramienta que ejecutará Nova"
+                          >
+                            <option value="custom_macro" style={{ background: "#0f172a" }}>🧩 Rutina / Macro</option>
+                            <option value="open_app" style={{ background: "#0f172a" }}>📱 Abrir App</option>
+                            <option value="open_project" style={{ background: "#0f172a" }}>📂 Abrir Proyecto</option>
+                            <option value="play_music" style={{ background: "#0f172a" }}>🎵 Reproducir Música</option>
+                            <option value="homesoc_query" style={{ background: "#0f172a" }}>🛡️ Consultar HomeSOC</option>
+                            <option value="web_search" style={{ background: "#0f172a" }}>🔍 Buscar en Google</option>
+                            <option value="add_todo" style={{ background: "#0f172a" }}>📝 Crear Tarea</option>
+                          </select>
+                          <input
+                            className="glass-input"
+                            style={{ flex: 1, minWidth: 160, padding: "4px 7px", fontSize: 10.5 }}
+                            value={editArg}
+                            onChange={(e) => setEditArg(e.target.value)}
+                            placeholder="Qué debe hacer (ej: cero música, VS Code en primer plano, brillo 85)"
+                            title="Acciones o destino exacto que ejecutará esta rutina"
+                          />
+                          <button
+                            type="button"
+                            className="icon-chip icon-chip--active"
+                            style={{ fontSize: 10.5 }}
+                            onClick={() => {
+                              if (!editPhrase.trim() || !editArg.trim()) return;
+                              void updateNovaPattern(
+                                editOrigPhrase || editPhrase,
+                                editPhrase,
+                                editTool,
+                                editArg,
+                              ).then(() => {
+                                setKbLearnedCount(getNovaKbStats().learnedCount);
+                                setEditOrigPhrase(null);
+                                setEditPhrase("");
+                                setEditArg("");
+                                playDoneChime(config.hudSounds !== false);
+                              });
+                            }}
+                          >
+                            💾 Guardar
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="glass-card-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 4 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <span style={{ fontSize: 10.5, fontWeight: 700, opacity: 0.9 }}>
+                            🧠 Tus rutinas aprendidas ({getNovaKbPatterns().length})
+                          </span>
+                          <span style={{ fontSize: 9.5, opacity: 0.65 }}>Clic para editar · ▶ Probar · ✕ Borrar</span>
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4, maxHeight: 74, overflowY: "auto" }}>
+                          {getNovaKbPatterns().map((pat) => (
+                            <span
+                              key={pat.phrase}
+                              className={`icon-chip${editOrigPhrase === pat.phrase ? " icon-chip--active" : ""}`}
+                              style={{ fontSize: 10, padding: "2px 7px", gap: 5 }}
+                              title={`${pat.tool} → ${pat.arg}`}
+                            >
+                              <button
+                                type="button"
+                                style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 0, fontSize: 10 }}
+                                onClick={() => {
+                                  setEditOrigPhrase(pat.phrase);
+                                  setEditPhrase(pat.phrase);
+                                  setEditTool(pat.tool);
+                                  setEditArg(pat.arg);
+                                }}
+                                title={`Editar rutina (${pat.tool}: ${pat.arg})`}
+                              >
+                                ✏️ {pat.phrase}
+                              </button>
+                              <button
+                                type="button"
+                                style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 0, fontSize: 10, opacity: 0.8 }}
+                                title="Ejecutar ahora"
+                                onClick={() => void runSubuOrder(`Nova ${pat.phrase}`)}
+                              >
+                                ▶
+                              </button>
+                              <button
+                                type="button"
+                                style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 0, opacity: 0.75, fontSize: 10 }}
+                                title="Olvidar rutina"
+                                onClick={() => {
+                                  void deleteNovaPattern(pat.phrase).then(() =>
+                                    setKbLearnedCount(getNovaKbStats().learnedCount),
+                                  );
+                                }}
+                              >
+                                ✕
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="glass-card-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 4 }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, opacity: 0.8 }}>
+                          ⚡ Modos y Tools integradas de fábrica (siempre activas · clic para ejecutar)
+                        </span>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                          {(
+                            [
+                              ["💻 Modo Programación", "Nova modo programación"],
+                              ["🎤 Modo Presentación", "Nova modo presentación"],
+                              ["🏠 Modo Casa", "Nova modo casa"],
+                              ["☕ Modo Descanso", "Nova modo descanso"],
+                              ["🎓 Modo Universidad", "Nova modo universidad"],
+                              ["🎮 Modo Juego", "Nova modo juego"],
+                              ["📋 Resumen del día", "Nova dame el resumen del día"],
+                              ["⇄ Intercambiar P1↔P2", "Nova intercambia las pantallas"],
+                              ["🛡️ Estado HomeSOC", "Nova cómo está mi servidor"],
+                              ["📱 GlassDrop Wi-Fi", "Nova conecta mi celular"],
+                            ] as const
+                          ).map(([label, cmd]) => (
+                            <button
+                              key={label}
+                              type="button"
+                              className="icon-chip"
+                              style={{ fontSize: 9.5, padding: "2px 7px" }}
+                              onClick={() => void runSubuOrder(cmd)}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   )}
 
