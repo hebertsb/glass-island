@@ -718,8 +718,8 @@ app.whenReady().then(() => {
           [System.Windows.Forms.Screen]::PrimaryScreen
         }
         $wa = $targetScreen.WorkingArea
-        $bx = [int]($wa.X + 24); $by = [int]($wa.Y + 24)
-        $bw = [int][Math]::Max(720, $wa.Width - 48); $bh = [int][Math]::Max(520, $wa.Height - 48)
+        $bx = [int]$wa.X; $by = [int]$wa.Y
+        $bw = [int][Math]::Max(720, $wa.Width); $bh = [int][Math]::Max(520, $wa.Height)
         $hint = '${hint}'
         if ($hint -ne '') {
           $p = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 -and $_.ProcessName -ne 'electron' -and ($_.ProcessName -like "*$hint*" -or $_.MainWindowTitle -like "*$hint*") } | Sort-Object { if($_.MainWindowTitle -ne ''){0}else{1} } | Select-Object -First 1
@@ -728,10 +728,11 @@ app.whenReady().then(() => {
         }
         if ($null -ne $p) {
           $h = $p.MainWindowHandle
-          $wasMax = [GIMove]::IsZoomed($h)
           [GIMove]::ShowWindow($h, 9) | Out-Null
+          Start-Sleep -Milliseconds 60
           [GIMove]::MoveWindow($h, $bx, $by, $bw, $bh, $true) | Out-Null
-          if ($wasMax) { [GIMove]::ShowWindow($h, 3) | Out-Null }
+          Start-Sleep -Milliseconds 120
+          [GIMove]::ShowWindow($h, 3) | Out-Null
           [GIMove]::BringFront($h)
           Write-Output ("MOVED|" + $p.MainWindowTitle)
         } else {
