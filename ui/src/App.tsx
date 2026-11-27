@@ -455,7 +455,7 @@ export default function App() {
   const [expanded, setExpanded] = useState(false);
   const [activeTab, setActiveTab] = useState<ModuleId | `app:${string}`>("home");
   const [settingsSection, setSettingsSection] = useState<
-    "nova" | "design" | "apps" | "home" | "shortcuts" | "dock"
+    "nova" | "connections" | "design" | "apps" | "home" | "shortcuts" | "dock"
   >("nova");
   const [clock, setClock] = useState(() => new Date());
   const [weather, setWeather] = useState<WeatherData>({
@@ -3589,6 +3589,7 @@ export default function App() {
                     {(
                       [
                         ["nova", "🎙️ Nova & IA"],
+                        ["connections", "🔌 Conexiones"],
                         ["design", "🎨 Diseño"],
                         ["apps", `📱 Apps (${installedApps.length || "…"})`],
                         ["home", "🏠 Home"],
@@ -3792,6 +3793,51 @@ export default function App() {
                         </button>
                       </div>
 
+                      <div className="glass-card-row" style={{ gap: 6 }}>
+                        <input
+                          type="password"
+                          className="glass-input"
+                          style={{ flex: 1, padding: "5px 8px", fontSize: 11 }}
+                          value={config.geminiApiKey ?? ""}
+                          onChange={(e) =>
+                            setConfig((p) => ({ ...p, geminiApiKey: e.target.value }))
+                          }
+                          placeholder="Gemini API Key (para IA + Voz Gemini Pro TTS)"
+                        />
+                        <select
+                          className="glass-input"
+                          style={{ width: 126, padding: "5px 6px", fontSize: 10.5 }}
+                          value={config.personalityMode || "adaptive"}
+                          onChange={(e) =>
+                            setConfig((p) => ({
+                              ...p,
+                              personalityMode: e.target.value as PersonalityMode,
+                            }))
+                          }
+                          title="Personalidad y adaptación de actitud de N.O.V.A."
+                        >
+                          <option value="adaptive" style={{ background: "#0f172a" }}>🎩 Jarvis Adaptativo</option>
+                          <option value="jarvis" style={{ background: "#0f172a" }}>🎩 Jarvis Clásico</option>
+                          <option value="friendly" style={{ background: "#0f172a" }}>😎 Cercano</option>
+                          <option value="executive" style={{ background: "#0f172a" }}>💼 Ejecutivo</option>
+                        </select>
+                        <input
+                          className="glass-input"
+                          style={{ width: 92, padding: "5px 7px", fontSize: 11 }}
+                          value={config.ollamaModel ?? "qwen2.5:7b"}
+                          onChange={(e) =>
+                            setConfig((p) => ({ ...p, ollamaModel: e.target.value }))
+                          }
+                          placeholder="Ollama"
+                          title="Modelo local Ollama (127.0.0.1:11434)"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* SECCIÓN 1B: CONEXIONES, SERVIDOR HOMESOC (MCP), PLAYLISTS, DOMÓTICA Y MEMORIA */}
+                  {settingsSection === "connections" && (
+                    <div className="settings-panel">
                       <div className="glass-card-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 5 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
                           <span style={{ fontSize: 10.5, fontWeight: 700, opacity: 0.9 }}>
@@ -3968,6 +4014,29 @@ export default function App() {
                         )}
                       </div>
 
+                      <div className="glass-card-row" style={{ gap: 6 }}>
+                        <input
+                          className="glass-input"
+                          style={{ width: 140, padding: "4px 7px", fontSize: 10.5 }}
+                          value={config.codingMusic ?? "Avicii Levels"}
+                          onChange={(e) =>
+                            setConfig((p) => ({ ...p, codingMusic: e.target.value }))
+                          }
+                          placeholder="Música respaldo"
+                          title="Canción de respaldo para Modo Programación si no elegiste playlist"
+                        />
+                        <input
+                          className="glass-input"
+                          style={{ flex: 1, padding: "4px 7px", fontSize: 10.5 }}
+                          value={config.smartHomeWebhook ?? ""}
+                          onChange={(e) =>
+                            setConfig((p) => ({ ...p, smartHomeWebhook: e.target.value }))
+                          }
+                          placeholder="💡 Webhook luces (Home Assistant / IFTTT / Tuya)"
+                          title="URL webhook opcional para controlar tus luces por voz"
+                        />
+                      </div>
+
                       {kbLearnedCount > 0 && (
                         <div className="glass-card-row" style={{ flexDirection: "column", alignItems: "stretch", gap: 4 }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -3978,7 +4047,7 @@ export default function App() {
                               Di &quot;Nova recuerda que ... es ...&quot;
                             </span>
                           </div>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, maxHeight: 62, overflowY: "auto" }}>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, maxHeight: 58, overflowY: "auto" }}>
                             {getNovaKbPatterns().map((pat) => (
                               <span
                                 key={pat.phrase}
@@ -4012,66 +4081,6 @@ export default function App() {
                           </div>
                         </div>
                       )}
-
-                      <div className="glass-card-row" style={{ gap: 6 }}>
-                        <input
-                          type="password"
-                          className="glass-input"
-                          style={{ flex: 1, padding: "5px 8px", fontSize: 11 }}
-                          value={config.geminiApiKey ?? ""}
-                          onChange={(e) =>
-                            setConfig((p) => ({ ...p, geminiApiKey: e.target.value }))
-                          }
-                          placeholder="Gemini API Key (para IA + Voz Gemini Pro TTS)"
-                        />
-                        <select
-                          className="glass-input"
-                          style={{ width: 122, padding: "5px 6px", fontSize: 10.5 }}
-                          value={config.personalityMode || "adaptive"}
-                          onChange={(e) =>
-                            setConfig((p) => ({
-                              ...p,
-                              personalityMode: e.target.value as PersonalityMode,
-                            }))
-                          }
-                          title="Personalidad y adaptación de actitud de N.O.V.A."
-                        >
-                          <option value="adaptive" style={{ background: "#0f172a" }}>🎩 Jarvis Adaptativo</option>
-                          <option value="jarvis" style={{ background: "#0f172a" }}>🎩 Jarvis Clásico</option>
-                          <option value="friendly" style={{ background: "#0f172a" }}>😎 Cercano</option>
-                          <option value="executive" style={{ background: "#0f172a" }}>💼 Ejecutivo</option>
-                        </select>
-                        <input
-                          className="glass-input"
-                          style={{ width: 92, padding: "5px 7px", fontSize: 11 }}
-                          value={config.ollamaModel ?? "qwen2.5:7b"}
-                          onChange={(e) =>
-                            setConfig((p) => ({ ...p, ollamaModel: e.target.value }))
-                          }
-                          placeholder="Ollama"
-                          title="Modelo local Ollama (127.0.0.1:11434)"
-                        />
-                        <input
-                          className="glass-input"
-                          style={{ width: 105, padding: "5px 7px", fontSize: 11 }}
-                          value={config.codingMusic ?? "Avicii Levels"}
-                          onChange={(e) =>
-                            setConfig((p) => ({ ...p, codingMusic: e.target.value }))
-                          }
-                          placeholder="Música"
-                          title="Canción o género para Modo Programación / Modo Proyecto"
-                        />
-                        <input
-                          className="glass-input"
-                          style={{ width: 115, padding: "5px 7px", fontSize: 11 }}
-                          value={config.smartHomeWebhook ?? ""}
-                          onChange={(e) =>
-                            setConfig((p) => ({ ...p, smartHomeWebhook: e.target.value }))
-                          }
-                          placeholder="Webhook luces"
-                          title="URL webhook opcional para Home Assistant / IFTTT / Tuya"
-                        />
-                      </div>
                     </div>
                   )}
 
