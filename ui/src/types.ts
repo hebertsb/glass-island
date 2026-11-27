@@ -244,7 +244,7 @@ export const DEFAULT_CONFIG: IslandConfig = {
   mcpServerToken: "",
   voiceEnabled: true,
   alwaysListen: true,
-  voiceName: "es-BO-SofiaNeural",
+  voiceName: "es-MX-JorgeNeural",
   aiBrainEnabled: true,
   geminiApiKey: "",
   ollamaModel: "qwen2.5:7b",

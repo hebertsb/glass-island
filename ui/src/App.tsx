@@ -1359,7 +1359,7 @@ export default function App() {
       void speakAsSubu(
         line,
         true,
-        cfg.voiceName || "en-US-EmmaMultilingualNeural",
+        cfg.voiceName || "es-MX-JorgeNeural",
         () => setSpeaking(true),
         () => {
           setSpeaking(false);

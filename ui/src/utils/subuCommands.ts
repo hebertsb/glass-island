@@ -447,7 +447,7 @@ let activeAudio: HTMLAudioElement | null = null;
 export async function speakAsSubu(
   text: string,
   enabled: boolean,
-  voiceName = "en-US-EmmaMultilingualNeural",
+  voiceName = "es-MX-JorgeNeural",
   onStart?: () => void,
   onEnd?: () => void,
   geminiApiKey?: string,
@@ -460,7 +460,12 @@ export async function speakAsSubu(
       activeAudio = null;
     }
     const api = getBridge();
-    const res = await api?.voice_speak(text, voiceName, geminiApiKey, ttsStyle).catch(() => null);
+    let res = await api?.voice_speak(text, voiceName, geminiApiKey, ttsStyle).catch(() => null);
+    if (!res?.audio && api?.voice_speak) {
+      // Reintento único por si voice_daemon.py aún terminaba de arrancar en frío
+      await new Promise((r) => setTimeout(r, 1200));
+      res = await api.voice_speak(text, voiceName, geminiApiKey, ttsStyle).catch(() => null);
+    }
     if (res?.audio) {
       const audio = new Audio(res.audio);
       activeAudio = audio;

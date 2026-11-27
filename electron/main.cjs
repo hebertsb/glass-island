@@ -8,6 +8,9 @@ const path = require("path");
 const readline = require("readline");
 const { createGlassDropServer } = require("./glassdrop.cjs");
 
+// Permite reproducir el saludo de inicio y audio de N.O.V.A. sin requerir un clic previo del usuario
+app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
+
 const GEMINI_HTTPS_AGENT = new https.Agent({ keepAlive: true, maxSockets: 4 });
 
 const RESOURCES_BASE = app.isPackaged ? process.resourcesPath : path.join(__dirname, "..");
@@ -2890,7 +2893,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle("island:voice-speak", async (_e, text, voice, geminiApiKey) => {
     const cleanText = String(text || "").trim();
-    const requestedVoice = String(voice || "en-US-EmmaMultilingualNeural");
+    const requestedVoice = String(voice || "es-MX-JorgeNeural");
     if (!cleanText) return { audio: "", voice: requestedVoice };
 
     // 1) Caché instantánea en disco (0 ms, 0 cuota API, 0% GPU)
