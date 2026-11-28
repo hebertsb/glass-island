@@ -368,6 +368,8 @@ export const VOICE_PROFILES = [
   { id: "es-BO-MarceloNeural", label: "🇧🇴 Marcelo · Bolivia [Gratis · Sin API · 0% GPU]" },
   { id: "es-BO-SofiaNeural", label: "🇧🇴 Sofía · Bolivia [Gratis · Sin API · 0% GPU]" },
   { id: "gemini:Charon", label: "☁️ Jarvis Charon [API Gemini · Cuota diaria]" },
+  { id: "kokoro:em_alex", label: "⚡ Kokoro Alex [100% Offline Rápido · CPU]" },
+  { id: "kokoro:ef_dora", label: "⚡ Kokoro Dora [100% Offline Rápido · CPU]" },
   { id: "clone:jarvis", label: "🧬 Jarvis Clonado [100% Local Offline · GPU]" },
 ] as const;
 

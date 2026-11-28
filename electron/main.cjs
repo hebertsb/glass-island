@@ -2890,6 +2890,43 @@ app.whenReady().then(() => {
   });
 
   let geminiTtsCooldownUntil = 0;
+  let kokoroDownloadPromise = null;
+
+  function ensureKokoroModelsInBackground() {
+    const kdir = path.join(CONFIG_DIR, "kokoro");
+    const onnxPath = path.join(kdir, "kokoro-v1.0.onnx");
+    const voicesPath = path.join(kdir, "voices-v1.0.bin");
+    if (fs.existsSync(onnxPath) && fs.existsSync(voicesPath)) return true;
+    if (!kokoroDownloadPromise) {
+      kokoroDownloadPromise = (async () => {
+        try {
+          fs.mkdirSync(kdir, { recursive: true });
+          const downloadFile = async (url, dest) => {
+            if (fs.existsSync(dest) && fs.statSync(dest).size > 1000000) return;
+            const res = await fetch(url, { redirect: "follow" });
+            if (!res.ok) return;
+            const buf = Buffer.from(await res.arrayBuffer());
+            const tmp = `${dest}.part`;
+            fs.writeFileSync(tmp, buf);
+            fs.renameSync(tmp, dest);
+          };
+          await downloadFile(
+            "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx",
+            onnxPath,
+          );
+          await downloadFile(
+            "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin",
+            voicesPath,
+          );
+        } catch {
+          // ignore network errors; fallback stays active
+        } finally {
+          kokoroDownloadPromise = null;
+        }
+      })();
+    }
+    return false;
+  }
 
   ipcMain.handle("island:voice-speak", async (_e, text, voice, geminiApiKey) => {
     const cleanText = String(text || "").trim();
@@ -2903,6 +2940,26 @@ app.whenReady().then(() => {
         () => {},
       );
       return { audio: cachedUrl, voice: requestedVoice, engine: "cache-0ms" };
+    }
+
+    // 1.5) Kokoro-82M ONNX 100% offline rápido en CPU (0% GPU; autodescarga ligera en 1er uso)
+    if (requestedVoice.startsWith("kokoro:")) {
+      const kVoice = requestedVoice.slice("kokoro:".length).trim() || "em_alex";
+      const ready = ensureKokoroModelsInBackground();
+      if (ready) {
+        const kok = await callVoice({ cmd: "speak_kokoro", text: cleanText, voice: kVoice }, 35000);
+        if (kok?.audio) {
+          try {
+            const b64 = String(kok.audio).replace(/^data:audio\/wav;base64,/, "");
+            writeVoiceCache(requestedVoice, cleanText, Buffer.from(b64, "base64"));
+          } catch {
+            // ignore
+          }
+          return { audio: kok.audio, voice: requestedVoice, engine: "kokoro-offline" };
+        }
+      }
+      const fallbackVoice = kVoice.startsWith("ef_") ? "es-BO-SofiaNeural" : "es-MX-JorgeNeural";
+      return await callVoice({ cmd: "speak", text: cleanText, voice: fallbackVoice }, 12000);
     }
 
     // 2) Voz clonada 100% offline en GPU local (usando jarvis_ref.wav)

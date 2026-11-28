@@ -15,6 +15,7 @@ import asyncio
 import base64
 import io
 import json
+import os
 import re
 import sys
 import threading
@@ -40,6 +41,51 @@ _whisper_model = None
 _whisper_loading = False
 _clone_model = None
 _clone_loading = False
+_kokoro_model = None
+_kokoro_lock = threading.Lock()
+
+
+def _load_kokoro_if_present() -> bool:
+    global _kokoro_model
+    with _kokoro_lock:
+        if _kokoro_model is not None:
+            return True
+        try:
+            from kokoro_onnx import Kokoro  # type: ignore
+
+            kdir = os.path.join(os.environ.get("LOCALAPPDATA", ""), "GlassIsland", "kokoro")
+            onnx_path = os.path.join(kdir, "kokoro-v1.0.onnx")
+            voices_path = os.path.join(kdir, "voices-v1.0.bin")
+            if not (os.path.exists(onnx_path) and os.path.exists(voices_path)):
+                return False
+            _kokoro_model = Kokoro(onnx_path, voices_path)
+            emit({"event": "kokoro_ready"})
+            return True
+        except Exception:
+            return False
+
+
+def _ensure_kokoro_async() -> None:
+    threading.Thread(target=_load_kokoro_if_present, daemon=True).start()
+
+
+def _synth_kokoro_wav_b64(text: str, kokoro_voice: str = "em_alex") -> str:
+    try:
+        if not _load_kokoro_if_present() or _kokoro_model is None:
+            return ""
+        spoken = _prepare_tts_text(text, "es-ES-AlvaroNeural")
+        samples, sr = _kokoro_model.create(spoken, voice=kokoro_voice, speed=1.0, lang="es")
+        arr = np.asarray(samples, dtype=np.float32).squeeze()
+        pcm = np.clip(arr * 32767.0, -32768, 32767).astype(np.int16)
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as wf:
+            wf.setnchannels(1)
+            wf.setsampwidth(2)
+            wf.setframerate(int(sr))
+            wf.writeframes(pcm.tobytes())
+        return "data:audio/wav;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+    except Exception:
+        return ""
 
 
 def _ensure_clone_async() -> None:
@@ -394,6 +440,16 @@ def _stdin_loop() -> None:
                 except Exception:
                     audio_b64 = ""
             emit({"id": req_id, "data": {"audio": audio_b64, "voice": voice}})
+        elif cmd == "speak_kokoro":
+            text = str(req.get("text", "")).strip()
+            kv = str(req.get("voice") or "em_alex").strip()
+            audio_b64 = ""
+            if text:
+                audio_b64 = _synth_kokoro_wav_b64(text, kv)
+                if audio_b64:
+                    with _state_lock:
+                        _muted_for_tts_until = time.monotonic() + max(2.2, len(text) * 0.075)
+            emit({"id": req_id, "data": {"audio": audio_b64, "voice": f"kokoro:{kv}"}})
         elif cmd == "speak_clone":
             text = str(req.get("text", "")).strip()
             ref_wav = str(req.get("ref_wav", "")).strip()
@@ -410,6 +466,7 @@ def _stdin_loop() -> None:
 
 
 def main() -> None:
+    _ensure_kokoro_async()
     t = threading.Thread(target=_listen_loop, daemon=True)
     t.start()
     _stdin_loop()
